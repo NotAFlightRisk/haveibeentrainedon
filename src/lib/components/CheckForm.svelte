@@ -6,10 +6,11 @@
     sitekey?: string;
     value?: string;
     force?: boolean;
+    between?: boolean;
     error?: string;
   }
 
-  let { sitekey, value = '', force = false, error }: Props = $props();
+  let { sitekey, value = '', force = false, between = false, error }: Props = $props();
   let sending = $state(false);
   let tries = $state(0);
 </script>
@@ -45,6 +46,9 @@
   </div>
   {#if force}
     <input type="hidden" name="force" value="1" />
+  {/if}
+  {#if between}
+    <input type="hidden" name="between" value="1" />
   {/if}
   {#if sitekey}
     <div class="human" use:turnstile={{ sitekey, tries }}></div>

@@ -10,7 +10,8 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = ({ url }) => ({
   sitekey: env.TURNSTILE_SECRET ? env.TURNSTILE_SITEKEY : undefined,
   prefill: url.searchParams.get('url') ?? '',
-  force: url.searchParams.has('force')
+  force: url.searchParams.has('force'),
+  between: url.searchParams.has('between')
 });
 
 const withScheme = (input: string) => (/^https?:\/\//i.test(input) ? input : `https://${input}`);
@@ -37,7 +38,10 @@ export const actions: Actions = {
     }
     let outcome: Outcome;
     try {
-      outcome = await lookUpUrl(withScheme(url), ip, form.get('force') === '1');
+      outcome = await lookUpUrl(withScheme(url), ip, {
+        force: form.get('force') === '1',
+        between: form.get('between') === '1'
+      });
     } catch (error) {
       if (error instanceof FetchError) {
         return fail(422, { url, error: error.message, paste: error.reason !== 'address' });

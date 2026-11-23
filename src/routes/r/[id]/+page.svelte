@@ -64,8 +64,15 @@
     return `${plural(place.ahead, 'check')} ahead of you, so ${wait}. Leave this page open and it fills itself in.`;
   });
 
-  const checkAnyway = $derived(
-    result.url ? `/?url=${encodeURIComponent(result.url)}&force` : undefined
+  const again = (extra: string) =>
+    result.url ? `/?url=${encodeURIComponent(result.url)}&${extra}` : undefined;
+  const checkAnyway = $derived(again('force'));
+  const between = $derived(
+    result.done &&
+      result.crawls.length === 2 &&
+      result.crawls.some((crawl) => crawl.verdict !== 'new')
+      ? again('between')
+      : undefined
   );
 
   $effect(() => {
@@ -124,7 +131,7 @@
           </div>
         {/each}
         <div class="slot">
-          <CrawlCard crawls={result.crawls} />
+          <CrawlCard crawls={result.crawls} {between} />
         </div>
       </div>
     </section>

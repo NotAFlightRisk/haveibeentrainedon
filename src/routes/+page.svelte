@@ -35,6 +35,7 @@
     sitekey={data.sitekey}
     value={form?.url ?? data.prefill}
     force={data.force}
+    between={data.between}
     error={fetchFailed ? `${form?.error} You can paste its text below instead.` : form?.error}
   />
   <details class="paste" open={fetchFailed || !!form?.pasteError}>

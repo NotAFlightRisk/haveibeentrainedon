@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { SETS, TIMELINE } from '#lib/corpora.ts';
+import { BETWEEN, SETS, TIMELINE } from '#lib/corpora.ts';
 import { estimate, type Span } from '#lib/plan.ts';
 import { hashSpan, pastedSpans } from '#lib/spans.ts';
 import { checkAddress, fetchPage } from './fetcher.ts';
@@ -37,15 +37,28 @@ function canonicalOf(href: string | undefined, landed: URL) {
   return normalise(landed);
 }
 
+/** What a check can ask for beyond the usual: sets it's too new for, and the crawls between */
+export interface Ask {
+  force?: boolean;
+  between?: boolean;
+}
+
 /** Sets a dated page can't be in are "too new" without asking, unless someone asks anyway */
-export function splitByDate(published: string | undefined, force: boolean) {
-  const wanted = [...SETS, ...TIMELINE];
+export function splitByDate(published: string | undefined, { force, between }: Ask = {}) {
+  const wanted = [...SETS, ...TIMELINE, ...(between ? BETWEEN : [])];
   const tooNew = (newest: string) => !force && !!published && published > newest;
   return {
     indexes: wanted.filter((corpus) => !tooNew(corpus.newest)).map((corpus) => corpus.index),
     skipped: wanted.filter((corpus) => tooNew(corpus.newest)).map((corpus) => corpus.index)
   };
 }
+
+/** A finished check answers the ask when it already counted everything the ask wants */
+const covers = (lookup: Lookup, ask: Ask) =>
+  lookup.spans.length < 2 ||
+  splitByDate(lookup.published ?? undefined, ask).indexes.every((index) =>
+    lookup.indexes.includes(index)
+  );
 
 export const newId = () =>
   btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12))))
@@ -54,11 +67,11 @@ export const newId = () =>
 
 const gate = () => env.GATE.getByName('line');
 
-/** A recent result to send people to, or one still in the line even when they asked anyway */
-async function reuse(lookup: Lookup | null, force: boolean) {
+/** A recent result to send people to, or one still in the line even when they asked for more */
+async function reuse(lookup: Lookup | null, ask: Ask) {
   if (!lookup || lookup.picker !== PICKER || Date.now() - lookup.checkedAt > STALE_MS) return;
   if (lookup.status === 'queued') return (await gate().place(lookup.id)) ? lookup.id : undefined;
-  return force ? undefined : lookup.id;
+  return covers(lookup, ask) ? lookup.id : undefined;
 }
 
 async function queue(lookup: Lookup, who: string, previous: Lookup | null): Promise<Outcome> {
@@ -99,7 +112,7 @@ export async function lookUpText(text: string, who: string): Promise<Outcome> {
     published: null,
     lang: null,
     spans,
-    indexes: ready ? [] : splitByDate(undefined, false).indexes,
+    indexes: ready ? [] : splitByDate(undefined).indexes,
     skipped: [],
     picker: PICKER,
     status: ready ? 'done' : 'queued',
@@ -110,21 +123,24 @@ export async function lookUpText(text: string, who: string): Promise<Outcome> {
 }
 
 /** Finds a page's result, fetching and queueing it only when there isn't a recent one */
-export async function lookUpUrl(input: string, who: string, force = false): Promise<Outcome> {
+export async function lookUpUrl(input: string, who: string, ask: Ask = {}): Promise<Outcome> {
   const asked = normalise(checkAddress(input.trim()));
   const cached = await lookupByUrl(asked);
-  const known = await reuse(cached, force);
+  const known = await reuse(cached, ask);
   if (known) return { id: known };
 
   const { url: landed, html } = await fetchPage(asked);
   const page = readPage(html);
   const url = canonicalOf(page.canonical, landed);
   const previous = url === asked ? cached : await lookupByUrl(url);
-  const filed = url === asked ? undefined : await reuse(previous, force);
+  const filed = url === asked ? undefined : await reuse(previous, ask);
   if (filed) return { id: filed };
 
   const spans = await hashed(page.spans);
-  const { indexes, skipped } = splitByDate(page.published, force);
+  const split = splitByDate(page.published, ask);
+  // anything an earlier check counted stays in, so asking for the months doesn't lose a forced set
+  const indexes = [...new Set([...(previous?.indexes ?? []), ...split.indexes])];
+  const skipped = split.skipped.filter((index) => !indexes.includes(index));
   const ready = spans.length < 2 || !indexes.length;
   const lookup: Lookup = {
     id: previous?.id ?? newId(),

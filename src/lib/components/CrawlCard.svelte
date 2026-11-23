@@ -2,7 +2,7 @@
   import type { Cell, CellVerdict } from '#lib/server/result.ts';
   import Card from './Card.svelte';
 
-  let { crawls }: { crawls: Cell[] } = $props();
+  let { crawls, between }: { crawls: Cell[]; between?: string } = $props();
 
   const words: Record<CellVerdict, string> = {
     match: 'found',
@@ -29,6 +29,9 @@
     roughly when your text was taken.
   </p>
   <p>A miss can't tell you whether blocking Common Crawl's bot worked.</p>
+  {#if between}
+    <p><a href={between}>Check the months between</a></p>
+  {/if}
 </Card>
 
 <style>
@@ -36,10 +39,10 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0 var(--space-4);
+    gap: var(--space-3) var(--space-4);
     min-height: calc(var(--line) * 3);
     margin: 0;
-    padding: 0;
+    padding: var(--space-2) 0;
     list-style: none;
   }
 
@@ -88,5 +91,10 @@
   p {
     font-size: 0.92rem;
     color: var(--ink-muted);
+
+    a {
+      color: var(--ink);
+      font-weight: 600;
+    }
   }
 </style>

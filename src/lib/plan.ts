@@ -82,21 +82,34 @@ export function docsStep(row: Row, fetched: ReadonlySet<string>): Step | undefin
   return span && { kind: 'docs', index: row.index, span };
 }
 
+export interface Evaluation {
+  active: Span[];
+  screening: boolean;
+  thin: boolean;
+  rows: Row[];
+  next?: Step;
+}
+
 /** Everything a lookup knows so far, and the one call that would tell it the most next */
-export function evaluate(plan: Plan, counts: Counts, fetched: ReadonlySet<string> = new Set()) {
-  if (!plan.indexes.length) return { active: [], thin: false, rows: [] as Row[] };
+export function evaluate(
+  plan: Plan,
+  counts: Counts,
+  fetched: ReadonlySet<string> = new Set()
+): Evaluation {
+  const nothing: Evaluation = { active: [], screening: false, thin: false, rows: [] };
+  if (!plan.indexes.length) return nothing;
   const screened = screen(plan.spans, counts);
   if (screened.next) {
     const rows = plan.indexes.map((index): Row => ({ index, verdict: 'pending', hits: [] }));
-    return { active: screened.active, thin: false, rows, next: screened.next as Step };
+    return { ...nothing, active: screened.active, screening: true, rows, next: screened.next };
   }
   const { active } = screened;
-  if (active.length < 2) return { active, thin: true, rows: [] as Row[] };
+  if (active.length < 2) return { ...nothing, active, thin: true };
   const rows = plan.indexes.map((index) => decide(index, active, counts));
   const next =
     rows.find((row) => row.next)?.next ??
     rows.map((row) => docsStep(row, fetched)).find((step) => step);
-  return { active, thin: false, rows, next };
+  return { ...nothing, active, rows, next };
 }
 
 const DOCS_CALLS = { urls: 2, slice: 1, part: 0 };

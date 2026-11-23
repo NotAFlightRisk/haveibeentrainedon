@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { CRAWLS, SCREEN, SETS, TIMELINE, type Corpus } from '#lib/corpora.ts';
 import { evaluate, key, STOCK, type Counts, type Row, type Span } from '#lib/plan.ts';
+import { PRIMARY } from '#lib/spans.ts';
 import type { Place } from './gate.ts';
 import type { Doc } from './infinigram.ts';
 import { finishLookup, loadCounts, loadDocs, lookupById, type Lookup } from './store.ts';
@@ -130,7 +131,7 @@ export async function loadResult(id: string): Promise<Result | null> {
   const hashes = lookup.spans.map(({ hash }) => hash);
   const [counts, docs] = await Promise.all([loadCounts(hashes), loadDocs(hashes)]);
   const plan = { spans: lookup.spans, indexes: lookup.indexes };
-  const { active, thin, rows } = evaluate(plan, counts, new Set(docs.keys()));
+  const { active, screening, thin, rows } = evaluate(plan, counts, new Set(docs.keys()));
   const place = lookup.status === 'done' ? null : await env.GATE.getByName('line').place(id);
   // a check the line has lost (it gave up on it, say) is as done as it's ever going to be
   const lost = lookup.status === 'queued' && !place && Date.now() - lookup.checkedAt > LOST_MS;
@@ -150,7 +151,7 @@ export async function loadResult(id: string): Promise<Result | null> {
     english: !lookup.lang || lookup.lang.startsWith('en'),
     checkedAt: lookup.checkedAt,
     done,
-    spans: active.length ? active : lookup.spans.slice(0, 3),
+    spans: screening || !active.length ? lookup.spans.slice(0, PRIMARY) : active,
     stock,
     thin: thin || lookup.spans.length < 2,
     sets: SETS.map(toCell),

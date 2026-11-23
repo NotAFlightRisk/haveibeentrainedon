@@ -104,8 +104,9 @@
   <section>
     <h2>What gets kept</h2>
     <p>
-      The page's address, title and publish date, the sentences it searched and their counts. Your
-      IP address is only used, scrambled, to count your checks for the hour. Result pages have
+      The page's address, title and publish date, the sentences it searched and their counts. Pasted
+      text isn't kept at all, just fingerprints of its three sentences and their counts. Your IP
+      address is only used, scrambled, to count your checks for the hour. Result pages have
       addresses nobody can guess, and they aren't listed or indexed anywhere. Each one has a JSON
       copy at <code>/api/result/&lt;id&gt;</code>.
     </p>

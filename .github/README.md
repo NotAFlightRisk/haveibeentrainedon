@@ -22,7 +22,7 @@
 
 ## About
 
-Paste the address of something you wrote, and it looks for three of its sentences in the actual text of C4, the Pile, RedPajama, Dolma 1.7 and DCLM, plus January and July 2025's Common Crawls. Each set gets a straight answer (match, no match, or too new for it), along with which models it trained and whether the copies it found are on your own site or someone else's.
+Paste the address of something you wrote (or the text itself, for pages it can't fetch), and it looks for three of its sentences in the actual text of C4, the Pile, RedPajama, Dolma 1.7 and DCLM, plus January and July 2025's Common Crawls. Each set gets a straight answer (match, no match, or too new for it), along with which models it trained and whether the copies it found are on your own site or someone else's.
 
 Other checkers read Common Crawl's index and guess from there. This searches the training text itself, using [infini-gram](https://infini-gram.io/).
 
@@ -42,6 +42,7 @@ It's one Cloudflare Worker: a SvelteKit site plus a Durable Object, over D1.
 - It keeps three sentences of 70-220 characters and 12+ words, spread through the page, cut to 130 characters, with the first word dropped (infini-gram misses a phrase that opens a paragraph). Two spares come along in case one's stock text.
 - Every sentence is counted in January 2025's crawl first. Over 200 copies there means stock text, so a spare takes its place. Then each set counts sentences 1 and 2, and only asks about 3 if they disagree. Two out of three is a match.
 - A page with a full `datePublished` or `article:published_time` skips any set that stopped before it.
+- Pasted text goes through the same picker, in the browser and on the Worker. Only the sentences' hashes and counts are saved, and the text itself leaves the line once it's counted.
 - For C4, Dolma and DCLM matches it pulls up to 10 documents per sentence and groups them by site. RedPajama gets its slice named, and the Pile has no sources to give.
 - All of that is one call at a time through the `Gate` Durable Object: one call per alarm, 2 seconds apart, paused for 2 minutes and then half speed for an hour if the API ever says slow down. The line refuses new checks past 10 minutes of work, and each IP gets 5 fresh checks an hour.
 - Counts are cached in D1 per index and sentence, so a re-check (pages older than 30 days get one) only counts sentences that changed. The verdict logic is one pure function (`src/lib/plan.ts`) that both the Durable Object and the result page run.

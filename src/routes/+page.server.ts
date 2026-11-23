@@ -16,6 +16,11 @@ export const load: PageServerLoad = ({ url }) => ({
 
 const withScheme = (input: string) => (/^https?:\/\//i.test(input) ? input : `https://${input}`);
 const NOT_A_PERSON = "The person check hadn't finished. Give it a second and try again.";
+const MOST_PASTED = 100_000;
+// generous for 100,000 characters of anything plus the form around them, and no more
+const MOST_BYTES = 5 * MOST_PASTED;
+
+const tooBig = (request: Request) => Number(request.headers.get('content-length')) > MOST_BYTES;
 
 function refusal({ reason, retryAt }: Extract<Admission, { ok: false }>) {
   const wait = minutes(retryAt - Date.now());
@@ -26,6 +31,8 @@ function refusal({ reason, retryAt }: Extract<Admission, { ok: false }>) {
 
 export const actions: Actions = {
   check: async ({ request, getClientAddress }) => {
+    if (tooBig(request))
+      return fail(413, { url: '', error: "That's far too much for an address." });
     const form = await request.formData();
     const url = String(form.get('url') ?? '').trim();
     const ip = getClientAddress();
@@ -53,9 +60,12 @@ export const actions: Actions = {
   },
 
   paste: async ({ request, getClientAddress }) => {
+    const long = `That's over ${MOST_PASTED.toLocaleString('en-GB')} characters. A few paragraphs will do.`;
+    if (tooBig(request)) return fail(413, { pasteError: long });
     const form = await request.formData();
-    const text = String(form.get('text') ?? '').slice(0, 100_000);
+    const text = String(form.get('text') ?? '');
     const ip = getClientAddress();
+    if (text.length > MOST_PASTED) return fail(413, { pasteError: long });
     if (text.trim().length < 200) {
       return fail(400, { pasteError: 'Paste a few paragraphs, as it needs three long sentences.' });
     }

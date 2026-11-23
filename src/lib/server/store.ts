@@ -16,6 +16,8 @@ export interface Lookup {
   status: 'queued' | 'done';
   checkedAt: number;
   doneAt: number | null;
+  /** Changes on every save, so an undo only ever reverts its own write */
+  rev: string;
 }
 
 interface LookupRow extends Omit<Lookup, 'spans' | 'indexes' | 'skipped' | 'checkedAt' | 'doneAt'> {
@@ -56,7 +58,8 @@ const FIELDS = [
   'picker',
   'status',
   'checked_at',
-  'done_at'
+  'done_at',
+  'rev'
 ];
 const marks = (values: unknown[]) => values.map(() => '?').join(', ');
 const updates = FIELDS.map((field) => `${field} = excluded.${field}`).join(', ');
@@ -76,7 +79,8 @@ function fields(lookup: Lookup) {
     lookup.picker,
     lookup.status,
     lookup.checkedAt,
-    lookup.doneAt
+    lookup.doneAt,
+    lookup.rev
   ];
 }
 
@@ -93,22 +97,26 @@ export async function saveLookup(lookup: Lookup) {
 /** Puts back what a refused check replaced, unless a later check has saved over it since */
 export async function undoLookup(ours: Lookup, previous: Lookup | null) {
   const statement = previous
-    ? env.DB.prepare(`update lookups set ${assignments} where id = ? and checked_at = ?`).bind(
+    ? env.DB.prepare(`update lookups set ${assignments} where id = ? and rev = ?`).bind(
         ...fields(previous),
         ours.id,
-        ours.checkedAt
+        ours.rev
       )
-    : env.DB.prepare('delete from lookups where id = ? and checked_at = ?').bind(
-        ours.id,
-        ours.checkedAt
-      );
+    : env.DB.prepare('delete from lookups where id = ? and rev = ?').bind(ours.id, ours.rev);
   await statement.run();
 }
 
-export async function finishLookup(id: string) {
-  await env.DB.prepare(`update lookups set status = 'done', done_at = ? where id = ?`)
-    .bind(Date.now(), id)
-    .run();
+/** Marks a check done, recording the sets it actually counted, which a later ask may have widened */
+export async function finishLookup(id: string, indexes?: string[]) {
+  const statement = indexes
+    ? env.DB.prepare(
+        `update lookups set status = 'done', done_at = ?, indexes = ? where id = ?`
+      ).bind(Date.now(), JSON.stringify(indexes), id)
+    : env.DB.prepare(`update lookups set status = 'done', done_at = ? where id = ?`).bind(
+        Date.now(),
+        id
+      );
+  await statement.run();
 }
 
 export async function loadCounts(hashes: string[]) {

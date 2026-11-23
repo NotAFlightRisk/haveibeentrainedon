@@ -1,6 +1,6 @@
 import { DurableObject, env } from 'cloudflare:workers';
 import { byIndex, SCREEN, SETS, type Api } from '#lib/corpora.ts';
-import { evaluate, FAILED, key, type Plan, type Step } from '#lib/plan.ts';
+import { estimate, evaluate, FAILED, key, type Plan, type Step } from '#lib/plan.ts';
 import { count, documents, Throttled } from './infinigram.ts';
 import { report } from './report.ts';
 import { finishLookup, loadCounts, loadDocs, saveCount, saveDocs } from './store.ts';
@@ -10,6 +10,8 @@ const PAUSE_MS = 2 * MINUTE;
 const SLOW_MS = 60 * MINUTE;
 const LINE_MS = 10 * MINUTE;
 const RETRY_MS = 30_000;
+// a call can take this long, so nothing else may start until it's back
+const CALL_MS = 30_000;
 const GIVE_UP_MS = 30 * MINUTE;
 const TRIES = 3;
 const LIMITS = { url: { most: 5, per: 60 * MINUTE } };
@@ -115,7 +117,24 @@ export class Gate extends DurableObject {
     return btoa(String.fromCharCode(...new Uint8Array(digest).slice(0, 12)));
   }
 
+  /** Folds a second ask for a check that's already waiting into its plan, rather than losing it */
+  private widen(id: string, plan: Plan) {
+    const job = this.jobs().find((waiting) => waiting.id === id);
+    if (!job) return;
+    const current = JSON.parse(job.plan) as Plan;
+    const indexes = [...new Set([...current.indexes, ...plan.indexes])];
+    if (indexes.length === current.indexes.length) return;
+    const widened = { ...current, indexes };
+    this.sql.exec(
+      'update line set plan = ?, cost = ? where seq = ?',
+      JSON.stringify(widened),
+      Math.max(estimate(widened), job.calls + 1),
+      job.seq
+    );
+  }
+
   async admit(ticket: Ticket): Promise<Admission> {
+    this.widen(ticket.id, ticket.plan);
     const waiting = await this.place(ticket.id);
     if (waiting) return { ok: true, ahead: waiting.ahead, wait: waiting.wait };
     const now = Date.now();
@@ -186,6 +205,8 @@ export class Gate extends DurableObject {
       (a, b) => (this.get(`tried:${a}`) ?? 0) - (this.get(`tried:${b}`) ?? 0)
     )[0];
     await this.call({ kind: 'count', index: CANARIES[api], span: { hash: '', text: CANARY } });
+    // anyone who joined the line during the call shouldn't wait out the whole reservation
+    if (this.jobs().length) await this.ctx.storage.setAlarm(this.due());
   }
 
   async alarm() {
@@ -195,7 +216,7 @@ export class Gate extends DurableObject {
       let step: Step | undefined;
       try {
         step = await this.nextStep(job);
-        if (!step) await finishLookup(job.id);
+        if (!step) await finishLookup(job.id, (JSON.parse(job.plan) as Plan).indexes);
       } catch (error) {
         await report(error, undefined, 'gate');
         if (Date.now() - job.added < GIVE_UP_MS) {
@@ -232,6 +253,7 @@ export class Gate extends DurableObject {
     const now = Date.now();
     this.set('called', now);
     this.set(`tried:${api}`, now);
+    this.set('next', now + CALL_MS);
     try {
       if (step.kind === 'count') {
         const found = await count(step.index, query);

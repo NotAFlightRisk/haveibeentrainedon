@@ -52,7 +52,7 @@ It's one Cloudflare Worker: a SvelteKit site plus a Durable Object, over D1.
 
 ### Deployment
 
-You'll need a Cloudflare account on Workers Paid, as reading a page takes more CPU than the free plan's 10ms. Then fork the repo, and run:
+You'll want a Cloudflare account on Workers Paid, which is what it runs on here. The free plan might cope, but 10ms of CPU a request is tight for fetching and reading a page, and I haven't tried it. Then fork the repo, and run:
 
 ```bash
 # 1. Setup

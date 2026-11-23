@@ -74,13 +74,14 @@ async function reuse(lookup: Lookup | null, ask: Ask) {
   return covers(lookup, ask) ? lookup.id : undefined;
 }
 
+/** Somebody else filed the same page a moment before us */
+class Raced extends Error {}
+
 async function queue(lookup: Lookup, who: string, previous: Lookup | null): Promise<Outcome> {
   try {
     await saveLookup(lookup);
   } catch (error) {
-    // somebody else filed the same page a moment ago, so theirs it is
-    const winner = lookup.url ? await lookupByUrl(lookup.url) : null;
-    if (winner && winner.id !== lookup.id) return { id: winner.id };
+    if (!previous && lookup.url && (await lookupByUrl(lookup.url))) throw new Raced();
     throw error;
   }
   if (lookup.status === 'done') return { id: lookup.id };
@@ -117,13 +118,24 @@ export async function lookUpText(text: string, who: string): Promise<Outcome> {
     picker: PICKER,
     status: ready ? 'done' : 'queued',
     checkedAt: Date.now(),
-    doneAt: ready ? Date.now() : null
+    doneAt: ready ? Date.now() : null,
+    rev: newId()
   };
   return queue(lookup, who, null);
 }
 
 /** Finds a page's result, fetching and queueing it only when there isn't a recent one */
 export async function lookUpUrl(input: string, who: string, ask: Ask = {}): Promise<Outcome> {
+  try {
+    return await findOrQueue(input, who, ask);
+  } catch (error) {
+    // the other check's row is there now, so a second go finds it like anyone else would
+    if (error instanceof Raced) return findOrQueue(input, who, ask);
+    throw error;
+  }
+}
+
+async function findOrQueue(input: string, who: string, ask: Ask): Promise<Outcome> {
   const asked = normalise(checkAddress(input.trim()));
   const cached = await lookupByUrl(asked);
   const known = await reuse(cached, ask);
@@ -155,7 +167,8 @@ export async function lookUpUrl(input: string, who: string, ask: Ask = {}): Prom
     picker: PICKER,
     status: ready ? 'done' : 'queued',
     checkedAt: Date.now(),
-    doneAt: ready ? Date.now() : null
+    doneAt: ready ? Date.now() : null,
+    rev: newId()
   };
   return queue(lookup, who, previous);
 }

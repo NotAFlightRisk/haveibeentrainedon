@@ -77,6 +77,14 @@ describe('Gate', () => {
     expect(state.storage.sql.exec('select calls from line').toArray()).toEqual([{ calls: 1 }]);
   });
 
+  it('folds a wider ask for a waiting check into its plan instead of dropping it', async () => {
+    await gate.admit(ticket('one'));
+    const wider = { ...ticket('one'), plan: { spans, indexes: [SETS[0].index, SETS[1].index] } };
+    expect((await gate.admit(wider)).ok).toBe(true);
+    const [job] = state.storage.sql.exec('select plan from line').toArray() as { plan: string }[];
+    expect(JSON.parse(job.plan).indexes).toEqual([SETS[0].index, SETS[1].index]);
+  });
+
   it('turns away the sixth fresh check from one address in an hour', async () => {
     for (const id of ['a', 'b', 'c', 'd', 'e']) await gate.admit({ ...ticket(id), cost: 1 });
     const sixth = await gate.admit({ ...ticket('f'), cost: 1 });
@@ -105,6 +113,21 @@ describe('Gate', () => {
     await gate.alarm();
     expect(count).toHaveBeenCalledTimes(1);
     expect(state.alarm).toBe(booked);
+  });
+
+  it("holds the line while the canary's call is out, so nothing overlaps it", async () => {
+    let finish = () => {};
+    vi.mocked(count).mockImplementationOnce(
+      () => new Promise((resolve) => (finish = () => resolve(1)))
+    );
+    const started = Date.now();
+    const canary = gate.canary();
+    await vi.waitFor(() => expect(count).toHaveBeenCalledTimes(1));
+    await gate.admit(ticket('one'));
+    expect(state.alarm).toBeGreaterThanOrEqual(started + 30_000);
+    finish();
+    await canary;
+    expect(state.alarm).toBe(Date.now() + 2_000);
   });
 
   it("lets the canary go only when it's been quiet for a while, one call at a time", async () => {

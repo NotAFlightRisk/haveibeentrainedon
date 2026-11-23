@@ -115,8 +115,8 @@ function cell(corpus: Corpus, { lookup, rows, active, counts, docs, done }: Know
   const { id, name, snapshot, models, note, card } = corpus;
   const base = { id, name, snapshot, models, note, card };
   const shown = active.map(({ hash }) => counts.get(key(corpus.index, hash)) ?? null);
-  if (lookup.skipped.includes(corpus.index)) return { ...base, verdict: 'new', counts: [] };
   const row = rows.find((candidate) => candidate.index === corpus.index);
+  if (!row && lookup.skipped.includes(corpus.index)) return { ...base, verdict: 'new', counts: [] };
   if (!row) return { ...base, verdict: 'pending', counts: shown };
   const verdict =
     row.verdict === 'failed' || (row.verdict === 'pending' && done) ? 'failed' : row.verdict;

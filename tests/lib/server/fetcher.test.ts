@@ -39,7 +39,10 @@ describe('isPublicAddress', () => {
     'fe80::1',
     'fc00::1',
     '2001:db8::1',
-    '64:ff9b::7f00:1'
+    '64:ff9b::7f00:1',
+    '999.1.1.1',
+    '1.2.3',
+    'not an address'
   ])('refuses %s', (address) => {
     expect(isPublicAddress(address)).toBe(false);
   });

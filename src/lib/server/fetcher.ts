@@ -32,10 +32,12 @@ export function checkAddress(input: string | URL) {
   return url;
 }
 
-const v4 = (address: string) => address.split('.').map(Number);
+const DOTTED_QUAD = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
 function isPublicV4(address: string) {
-  const [a, b, c] = v4(address);
+  const octets = DOTTED_QUAD.exec(address)?.slice(1).map(Number);
+  if (!octets || octets.some((octet) => octet > 255)) return false;
+  const [a, b, c] = octets;
   return !(
     a === 0 ||
     a === 10 ||
@@ -78,11 +80,12 @@ interface DnsAnswer {
   data: string;
 }
 
-async function resolve(hostname: string) {
+async function resolve(hostname: string, deadline: AbortSignal) {
+  const signal = AbortSignal.any([deadline, AbortSignal.timeout(5_000)]);
   const ask = async (type: 'A' | 'AAAA') => {
     const response = await fetch(
       `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(hostname)}&type=${type}`,
-      { headers: { accept: 'application/dns-json' }, signal: AbortSignal.timeout(5_000) }
+      { headers: { accept: 'application/dns-json' }, signal }
     );
     const body = (await response.json()) as { Answer?: DnsAnswer[] };
     return (body.Answer ?? []).filter(({ type }) => type === 1 || type === 28);
@@ -123,7 +126,7 @@ export async function fetchPage(input: string) {
   let url = checkAddress(input);
   try {
     for (let hop = 0; hop <= MAX_HOPS; hop++) {
-      await resolve(url.hostname);
+      await resolve(url.hostname, deadline);
       const response = await fetch(url, {
         redirect: 'manual',
         signal: deadline,

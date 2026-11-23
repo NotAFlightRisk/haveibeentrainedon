@@ -24,11 +24,17 @@ const load = () =>
 /** Puts Cloudflare's person check in a node, and resets it whenever `tries` moves on */
 export function turnstile(node: HTMLElement, { sitekey }: { sitekey: string; tries: number }) {
   let id: string | undefined;
+  let gone = false;
   load()
-    .then(() => (id = window.turnstile.render(node, { sitekey, size: 'flexible' })))
+    .then(() => {
+      if (!gone) id = window.turnstile.render(node, { sitekey, size: 'flexible' });
+    })
     .catch(() => node.append("The person check didn't load, so fresh checks won't work."));
   return {
     update: () => id && window.turnstile.reset(id),
-    destroy: () => id && window.turnstile.remove(id)
+    destroy: () => {
+      gone = true;
+      if (id) window.turnstile.remove(id);
+    }
   };
 }

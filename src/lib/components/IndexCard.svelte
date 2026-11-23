@@ -19,7 +19,7 @@
   {/if}
   {#if counted.length}
     <p class="tally">
-      <span>Copies found, sentence by sentence</span>
+      <span>Copies per sentence</span>
       <span class="mono">{counted.map((count) => (count < 0 ? '?' : count)).join(' · ')}</span>
     </p>
   {/if}

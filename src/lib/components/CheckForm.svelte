@@ -67,7 +67,7 @@
     padding: var(--space-2);
     background: var(--surface);
     border-radius: var(--radius-control);
-    box-shadow: 0 10px 28px -14px rgb(0 0 0 / 0.55);
+    box-shadow: var(--shadow-box);
   }
 
   input {

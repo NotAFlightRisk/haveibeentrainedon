@@ -28,7 +28,7 @@
   --stamp-match: #b0262d;
   --stamp-none: #6a707a;
   --stamp-date: #5b3c8f;
-  --stamp-pending: #8b929c;
+  --stamp-pending: #6c737d;
 
   --accent: #b0262d;
   --accent-ink: #fff;
@@ -52,6 +52,8 @@
   --measure: 68ch;
   --page: 72rem;
   --shadow-card: 0 1px 1px rgb(28 34 48 / 0.06), 0 6px 14px -8px rgb(28 34 48 / 0.28);
+  --shadow-box: 0 10px 28px -14px rgb(0 0 0 / 0.55);
+  --shadow-hole: inset 0 1px 2px rgb(28 34 48 / 0.3);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 

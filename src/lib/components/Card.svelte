@@ -51,7 +51,7 @@
       translate: -50% 0;
       border-radius: 50%;
       background: var(--ground);
-      box-shadow: inset 0 1px 2px rgb(28 34 48 / 0.3);
+      box-shadow: var(--shadow-hole);
     }
   }
 

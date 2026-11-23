@@ -92,7 +92,7 @@
 </Band>
 
 <main>
-  <div class="lead" class:split={missed && !result.thin}>
+  <div class="lead" class:split={missed && !result.thin && result.url}>
     <CallSlip {result} />
     {#if missed && !result.thin}
       <Caveats />
@@ -171,7 +171,6 @@
     @media (width >= 64rem) {
       &.split {
         grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-        align-items: start;
       }
     }
   }

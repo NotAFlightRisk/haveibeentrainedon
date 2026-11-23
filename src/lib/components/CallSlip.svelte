@@ -50,6 +50,7 @@
 <style>
   .slip {
     display: grid;
+    align-content: start;
     gap: var(--space-3);
     padding: var(--space-4) var(--space-5);
     background: var(--slip);

@@ -1,0 +1,137 @@
+@import '@fontsource-variable/libre-franklin';
+@import '@fontsource/courier-prime/400.css';
+@import '@fontsource/courier-prime/700.css';
+
+:root {
+  color-scheme: light;
+
+  --ground: #e8ece5;
+  --surface: #fdfcf8;
+  --surface-sunk: #f3f5f0;
+  --ink: #1c2230;
+  --ink-muted: #48505f;
+  --ink-faint: #626a78;
+  --rule: #d3d9cf;
+  --rule-strong: #aab3a6;
+  --card-line: #d9e3f0;
+  --card-top: #d2635f;
+
+  --shell: #1d3b33;
+  --shell-raised: #26493f;
+  --shell-ink: #f1f5ef;
+  --shell-muted: #bfd0c5;
+
+  --slip: #f6ebbd;
+  --slip-edge: #e2d28f;
+  --slip-label: #2d5a3b;
+
+  --stamp-match: #b0262d;
+  --stamp-none: #6a707a;
+  --stamp-date: #5b3c8f;
+  --stamp-pending: #8b929c;
+
+  --accent: #b0262d;
+  --accent-ink: #fff;
+  --focus: #5b3c8f;
+  --selection: #f3d8d6;
+
+  --font-sans: 'Libre Franklin Variable', 'Libre Franklin', system-ui, sans-serif;
+  --font-mono: 'Courier Prime', ui-monospace, 'Courier New', monospace;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4.5rem;
+
+  --radius: 3px;
+  --radius-control: 6px;
+  --measure: 68ch;
+  --page: 72rem;
+  --shadow-card: 0 1px 1px rgb(28 34 48 / 0.06), 0 6px 14px -8px rgb(28 34 48 / 0.28);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 1rem/1.6 var(--font-sans);
+  font-feature-settings: 'kern';
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--selection);
+  color: var(--ink);
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+
+  &:hover {
+    text-decoration-thickness: 2px;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+code,
+kbd,
+samp,
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

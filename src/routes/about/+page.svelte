@@ -129,7 +129,7 @@
   main {
     display: grid;
     gap: var(--space-6);
-    max-width: 46rem;
+    max-width: var(--column);
     margin: 0 auto;
     padding: var(--space-6) var(--space-4) var(--space-7);
   }

@@ -66,7 +66,6 @@
   }
 
   summary {
-    cursor: pointer;
     color: var(--ink);
     font-weight: 550;
   }

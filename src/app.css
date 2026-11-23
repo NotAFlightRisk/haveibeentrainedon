@@ -105,6 +105,34 @@ a {
   }
 }
 
+summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  cursor: pointer;
+  list-style: none;
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+
+  &::before {
+    content: '';
+    flex: none;
+    width: 0.4em;
+    height: 0.4em;
+    border-right: 2px solid var(--card-top);
+    border-bottom: 2px solid var(--card-top);
+    rotate: -45deg;
+    translate: 0 -0.1em;
+    transition: rotate 160ms var(--ease-out);
+  }
+}
+
+details[open] > summary::before {
+  rotate: 45deg;
+}
+
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;

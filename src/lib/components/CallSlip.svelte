@@ -27,7 +27,12 @@
       <dd class="mono">{day(result.checkedAt)}</dd>
     </div>
   </dl>
-  {#if shown.length}
+  {#if result.kind === 'paste' && !shown.length}
+    <p class="fine">
+      These came from pasted text, which we don't keep, so only the browser that pasted it can show
+      them.
+    </p>
+  {:else if shown.length}
     <ol>
       {#each shown as span (span.hash)}
         <li>...{span.text}</li>

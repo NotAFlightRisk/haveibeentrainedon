@@ -1,15 +1,35 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import Band from '#lib/components/Band.svelte';
   import CallSlip from '#lib/components/CallSlip.svelte';
   import Caveats from '#lib/components/Caveats.svelte';
-  import DateStamps from '#lib/components/DateStamps.svelte';
+  import CrawlCard from '#lib/components/CrawlCard.svelte';
   import IndexCard from '#lib/components/IndexCard.svelte';
   import { minutes, plural } from '#lib/format.ts';
 
   let { data } = $props();
 
-  const result = $derived(data.result);
+  let mounted = $state(false);
+  onMount(() => (mounted = true));
+
+  // pasted text never reaches our storage, so its sentences come from this browser's own copy
+  const remembered = (hash: string) => {
+    try {
+      return sessionStorage.getItem(`span:${hash}`) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const result = $derived(
+    mounted && data.result.kind === 'paste'
+      ? {
+          ...data.result,
+          spans: data.result.spans.map((span) => ({ ...span, text: remembered(span.hash) }))
+        }
+      : data.result
+  );
   const asked = $derived(result.sets.filter((cell) => cell.verdict !== 'new'));
   const matched = $derived(asked.filter((cell) => cell.verdict === 'match'));
   const waiting = $derived(asked.filter((cell) => cell.verdict === 'pending'));
@@ -72,7 +92,12 @@
 </Band>
 
 <main>
-  <CallSlip {result} />
+  <div class="lead" class:split={missed && !result.thin}>
+    <CallSlip {result} />
+    {#if missed && !result.thin}
+      <Caveats />
+    {/if}
+  </div>
 
   {#if result.thin}
     <p class="note">
@@ -87,12 +112,8 @@
       </p>
     {/if}
 
-    {#if missed}
-      <Caveats />
-    {/if}
-
     <section aria-labelledby="sets-heading" class="sets">
-      <h2 id="sets-heading">Training sets</h2>
+      <h2 id="sets-heading">Training sets and crawls</h2>
       <div class="drawer">
         {#each result.sets as cell, order (cell.id)}
           <div class="slot">
@@ -102,10 +123,11 @@
             {/if}
           </div>
         {/each}
+        <div class="slot">
+          <CrawlCard crawls={result.crawls} />
+        </div>
       </div>
     </section>
-
-    <DateStamps crawls={result.crawls} />
 
     {#if !missed}
       <Caveats />
@@ -137,9 +159,21 @@
   main {
     display: grid;
     gap: var(--space-6);
-    max-width: var(--page);
+    max-width: var(--column);
     margin: 0 auto;
     padding: var(--space-6) var(--space-4) var(--space-7);
+  }
+
+  .lead {
+    display: grid;
+    gap: var(--space-5);
+
+    @media (width >= 64rem) {
+      &.split {
+        grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+        align-items: start;
+      }
+    }
   }
 
   .sets {
@@ -159,7 +193,7 @@
 
   .slot {
     display: grid;
-    align-content: start;
+    grid-template-rows: 1fr auto;
     gap: var(--space-2);
   }
 

@@ -1,30 +1,41 @@
 <script lang="ts">
   import '../app.css';
+  import { page } from '$app/state';
   import InkFilter from '#lib/components/InkFilter.svelte';
 
   let { children } = $props();
 </script>
 
 <InkFilter />
-{@render children()}
+<div class="site" class:wide={page.route.id === '/r/[id]'}>
+  {@render children()}
 
-<footer>
-  <nav aria-label="Site">
-    <a href="/">Check a page</a>
-    <a href="/about">How it works</a>
-    <a href="https://github.com/NotAFlightRisk/haveibeentrainedon">Source code</a>
-  </nav>
-  <p>
-    Counts come from <a href="https://infini-gram.io/">infini-gram</a>, run by the University of
-    Washington and Ai2. Made by <a href="https://peng.ly">peng.ly</a>.
-  </p>
-</footer>
+  <footer>
+    <nav aria-label="Site">
+      <a href="/">Check a page</a>
+      <a href="/about">How it works</a>
+      <a href="https://github.com/NotAFlightRisk/haveibeentrainedon">Source code</a>
+    </nav>
+    <p>
+      Counts come from <a href="https://infini-gram.io/">infini-gram</a>, run by the University of
+      Washington and Ai2. Made by <a href="https://peng.ly">peng.ly</a>.
+    </p>
+  </footer>
+</div>
 
 <style>
+  .site {
+    --column: 46rem;
+
+    &.wide {
+      --column: var(--page);
+    }
+  }
+
   footer {
     display: grid;
     gap: var(--space-2);
-    max-width: var(--page);
+    max-width: var(--column);
     margin: 0 auto;
     padding: var(--space-6) var(--space-4) var(--space-7);
     border-top: 1px solid var(--rule);

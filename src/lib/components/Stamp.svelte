@@ -39,11 +39,12 @@
     &.none {
       color: var(--stamp-none);
       border: 1px solid currentColor;
-      font-weight: 600;
-      font-size: 0.8rem;
-      letter-spacing: 0.04em;
+      font-weight: 700;
+      font-size: 0.88rem;
+      letter-spacing: 0.03em;
       text-transform: none;
       transform: rotate(-2deg);
+      filter: url(#ink-faint);
     }
 
     &.new {
@@ -63,7 +64,8 @@
     &.failed {
       color: var(--stamp-none);
       border-style: dashed;
-      font-size: 0.8rem;
+      font-size: 0.85rem;
+      filter: url(#ink-faint);
     }
   }
 

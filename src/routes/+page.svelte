@@ -1,10 +1,14 @@
 <script lang="ts">
   import Band from '#lib/components/Band.svelte';
   import Caveats from '#lib/components/Caveats.svelte';
+  import Card from '#lib/components/Card.svelte';
   import CheckForm from '#lib/components/CheckForm.svelte';
-  import { SETS, TIMELINE } from '#lib/corpora.ts';
+  import PasteForm from '#lib/components/PasteForm.svelte';
+  import { SETS } from '#lib/corpora.ts';
 
   let { data, form } = $props();
+
+  const fetchFailed = $derived(!!form && 'paste' in form && form.paste === true);
 </script>
 
 <svelte:head>
@@ -31,8 +35,12 @@
     sitekey={data.sitekey}
     value={form?.url ?? data.prefill}
     force={data.force}
-    error={form?.error}
+    error={fetchFailed ? `${form?.error} You can paste its text below instead.` : form?.error}
   />
+  <details class="paste" open={fetchFailed || !!form?.pasteError}>
+    <summary>Can't link to it? Paste the text instead</summary>
+    <PasteForm sitekey={data.sitekey} error={form?.pasteError} />
+  </details>
   <p class="fine">
     A fresh check takes about 40 seconds. Three sentences from the page go to
     <a href="https://infini-gram.io/">infini-gram</a>'s search at the University of Washington.
@@ -46,25 +54,18 @@
       The full text of five open training sets, plus two of 2025's raw Common Crawls. Every one is a
       snapshot, so a page written after it can't be in it.
     </p>
-    <div class="scroll">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Set</th>
-            <th scope="col">Web text up to</th>
-            <th scope="col">What it trained</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each [...SETS, ...TIMELINE] as corpus (corpus.id)}
-            <tr>
-              <th scope="row"><a href={corpus.card}>{corpus.name}</a></th>
-              <td class="mono">{corpus.snapshot}</td>
-              <td>{corpus.models}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+    <div class="drawer">
+      {#each SETS as set (set.id)}
+        <Card id="set-{set.id}" title={set.name} note="to {set.snapshot}">
+          <p class="models">{set.models}.</p>
+        </Card>
+      {/each}
+      <Card id="set-crawls" title="Common Crawl" note="2025">
+        <p class="models">
+          January and July's raw crawls. They trained no one model, but most web training sets are
+          cut from crawls like these, FineWeb included.
+        </p>
+      </Card>
     </div>
   </section>
 
@@ -107,10 +108,21 @@
     color: var(--shell-muted);
   }
 
+  .paste {
+    display: grid;
+    gap: var(--space-3);
+    width: 100%;
+
+    summary {
+      font-weight: 600;
+      color: var(--shell-ink);
+    }
+  }
+
   main {
     display: grid;
     gap: var(--space-7);
-    max-width: 46rem;
+    max-width: var(--column);
     margin: 0 auto;
     padding: var(--space-7) var(--space-4);
   }
@@ -128,39 +140,14 @@
     font-size: 1.5rem;
   }
 
-  .scroll {
-    overflow-x: auto;
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-card);
+  .drawer {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+    gap: var(--space-5);
   }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    background: var(--surface);
-    font-size: 0.95rem;
-  }
-
-  th,
-  td {
-    padding: var(--space-2) var(--space-3);
-    border-bottom: 1px solid var(--card-line);
-    text-align: left;
-    vertical-align: top;
-  }
-
-  thead th {
-    border-bottom: 2px solid var(--card-top);
-    font-size: 0.85rem;
+  .models {
+    font-size: 0.92rem;
     color: var(--ink-muted);
-  }
-
-  tbody th {
-    font-weight: 650;
-    white-space: nowrap;
-  }
-
-  td.mono {
-    white-space: nowrap;
   }
 </style>

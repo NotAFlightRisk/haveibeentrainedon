@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { SETS, TIMELINE } from '#lib/corpora.ts';
 import { estimate, type Span } from '#lib/plan.ts';
-import { hashSpan } from '#lib/spans.ts';
+import { hashSpan, pastedSpans } from '#lib/spans.ts';
 import { checkAddress, fetchPage } from './fetcher.ts';
 import type { Admission } from './gate.ts';
 import { readPage } from './page.ts';
@@ -84,6 +84,31 @@ async function queue(lookup: Lookup, who: string, previous: Lookup | null): Prom
   return { refused: admission };
 }
 
+const hashed = (texts: string[]): Promise<Span[]> =>
+  Promise.all(texts.map(async (text) => ({ text, hash: await hashSpan(text) })));
+
+/** Checks pasted text. Only its spans' hashes get saved, and the text leaves the line once counted */
+export async function lookUpText(text: string, who: string): Promise<Outcome> {
+  const spans = await hashed(pastedSpans(text));
+  const ready = spans.length < 2;
+  const lookup: Lookup = {
+    id: newId(),
+    kind: 'paste',
+    url: null,
+    title: null,
+    published: null,
+    lang: null,
+    spans,
+    indexes: ready ? [] : splitByDate(undefined, false).indexes,
+    skipped: [],
+    picker: PICKER,
+    status: ready ? 'done' : 'queued',
+    checkedAt: Date.now(),
+    doneAt: ready ? Date.now() : null
+  };
+  return queue(lookup, who, null);
+}
+
 /** Finds a page's result, fetching and queueing it only when there isn't a recent one */
 export async function lookUpUrl(input: string, who: string, force = false): Promise<Outcome> {
   const asked = normalise(checkAddress(input.trim()));
@@ -98,9 +123,7 @@ export async function lookUpUrl(input: string, who: string, force = false): Prom
   const filed = url === asked ? undefined : await reuse(previous, force);
   if (filed) return { id: filed };
 
-  const spans: Span[] = await Promise.all(
-    page.spans.map(async (text) => ({ text, hash: await hashSpan(text) }))
-  );
+  const spans = await hashed(page.spans);
   const { indexes, skipped } = splitByDate(page.published, force);
   const ready = spans.length < 2 || !indexes.length;
   const lookup: Lookup = {

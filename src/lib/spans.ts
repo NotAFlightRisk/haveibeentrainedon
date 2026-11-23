@@ -49,6 +49,10 @@ export function pickSpans(paragraphs: string[]) {
   return [...new Set(picks)].filter((span) => span.split(' ').length >= 10);
 }
 
+/** Pasted text's spans, picked the same way in the browser and on the server */
+export const pastedSpans = (text: string) =>
+  pickSpans(text.replace(/\r\n?/g, '\n').split(/\n\s*\n/));
+
 export async function hashSpan(span: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(span));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');

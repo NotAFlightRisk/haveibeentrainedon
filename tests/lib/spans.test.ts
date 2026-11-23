@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickSpans, sentences, toSpan } from '#lib/spans.ts';
+import { pastedSpans, pickSpans, sentences, toSpan } from '#lib/spans.ts';
 
 const sentence = (n: number) =>
   `Sentence number ${n} wanders on about gardening and the weather for long enough to count as prose here.`;
@@ -48,5 +48,13 @@ describe('pickSpans', () => {
 
   it('gives what it can when the page is short', () => {
     expect(pickSpans([paragraph(1, 2)])).toHaveLength(2);
+  });
+});
+
+describe('pastedSpans', () => {
+  it("picks the same spans from the browser's line breaks as from the form's", () => {
+    const text = [paragraph(1, 2, 3), paragraph(4, 5, 6)].join('\n\n');
+    expect(pastedSpans(text).length).toBeGreaterThanOrEqual(3);
+    expect(pastedSpans(text.replaceAll('\n', '\r\n'))).toEqual(pastedSpans(text));
   });
 });

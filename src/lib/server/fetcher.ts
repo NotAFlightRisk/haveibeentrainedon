@@ -21,13 +21,13 @@ export function checkAddress(input: string | URL) {
   try {
     url = new URL(input);
   } catch {
-    throw new FetchError('address', "That doesn't look like a web address");
+    throw new FetchError('address', "That doesn't look like a web address.");
   }
   if (!['http:', 'https:'].includes(url.protocol) || url.port || url.username || url.password) {
-    throw new FetchError('address', 'Only plain http and https addresses can be checked');
+    throw new FetchError('address', 'Only plain http and https addresses can be checked.');
   }
   if (!HOSTNAME.test(url.hostname) || PRIVATE_SUFFIX.test(url.hostname)) {
-    throw new FetchError('address', 'That needs to be a public website, not an IP or local name');
+    throw new FetchError('address', 'That needs to be a public website, not an IP or local name.');
   }
   return url;
 }
@@ -91,9 +91,9 @@ async function resolve(hostname: string, deadline: AbortSignal) {
     return (body.Answer ?? []).filter(({ type }) => type === 1 || type === 28);
   };
   const answers = (await Promise.all([ask('A'), ask('AAAA')])).flat();
-  if (!answers.length) throw new FetchError('unreachable', "We couldn't find that website");
+  if (!answers.length) throw new FetchError('unreachable', "We couldn't find that website.");
   if (!answers.every(({ data }) => isPublicAddress(data))) {
-    throw new FetchError('address', 'That name points somewhere private, so we left it alone');
+    throw new FetchError('address', 'That name points somewhere private, so we left it alone.');
   }
 }
 
@@ -106,7 +106,7 @@ async function readCapped(response: Response) {
     size += read.value.byteLength;
     if (size > MAX_BYTES) {
       await reader.cancel();
-      throw new FetchError('too-big', "That page is over 2 MB, which is more than we'll read");
+      throw new FetchError('too-big', "That page is over 2 MB, which is more than we'll read.");
     }
     chunks.push(read.value);
   }
@@ -142,19 +142,19 @@ export async function fetchPage(input: string) {
         await response.body?.cancel();
         throw new FetchError(
           'refused',
-          `That site wouldn't hand the page over (it answered ${response.status})`
+          `That site wouldn't hand the page over (it answered ${response.status}).`
         );
       }
       if (!/text\/html|application\/xhtml/i.test(response.headers.get('content-type') ?? '')) {
         await response.body?.cancel();
-        throw new FetchError('not-html', "That isn't a web page we can read");
+        throw new FetchError('not-html', "That isn't a web page we can read.");
       }
       return { url, html: await readCapped(response) };
     }
   } catch (error) {
     if (error instanceof FetchError) throw error;
-    if (deadline.aborted) throw new FetchError('timeout', 'The site took over 10 seconds');
-    throw new FetchError('unreachable', "We couldn't reach that website");
+    if (deadline.aborted) throw new FetchError('timeout', 'The site took over 10 seconds.');
+    throw new FetchError('unreachable', "We couldn't reach that website.");
   }
-  throw new FetchError('refused', 'That page redirects more than 3 times');
+  throw new FetchError('refused', 'That page redirects more than 3 times.');
 }

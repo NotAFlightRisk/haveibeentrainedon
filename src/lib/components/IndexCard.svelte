@@ -1,88 +1,41 @@
 <script lang="ts">
   import type { Cell } from '#lib/server/result.ts';
+  import Card from './Card.svelte';
   import Matches from './Matches.svelte';
   import Stamp from './Stamp.svelte';
 
   let { cell, order = 0 }: { cell: Cell; order?: number } = $props();
 
-  const tally = $derived(
-    cell.counts.map((count) => (count === null ? 'n/a' : count < 0 ? '?' : String(count)))
-  );
+  const counted = $derived(cell.counts.filter((count) => count !== null));
 </script>
 
-<article class="card" aria-labelledby="set-{cell.id}">
-  <header>
-    <h3 id="set-{cell.id}">{cell.name}</h3>
-    <p class="mono snapshot">to {cell.snapshot}</p>
-  </header>
+<Card id="set-{cell.id}" title={cell.name} note="to {cell.snapshot}">
   <div class="mark">
     <Stamp verdict={cell.verdict} delay={order * 90} />
   </div>
   <p class="models">{cell.models}.</p>
   {#if cell.note && cell.verdict === 'none'}
-    <p class="note">{cell.note}</p>
+    <p class="models">{cell.note}</p>
   {/if}
-  {#if tally.some((count) => count !== 'n/a')}
+  {#if counted.length}
     <p class="tally">
-      <span>Copies of each sentence</span>
-      <span class="mono">{tally.join(' · ')}</span>
+      <span>Copies found, sentence by sentence</span>
+      <span class="mono">{counted.map((count) => (count < 0 ? '?' : count)).join(' · ')}</span>
     </p>
   {/if}
   {#if cell.where}
     <Matches where={cell.where} />
   {/if}
-</article>
+</Card>
 
 <style>
-  .card {
-    --line: 1.5rem;
-    display: grid;
-    align-content: start;
-    padding: 0 var(--space-5) var(--line);
-    line-height: var(--line);
-    background:
-      linear-gradient(var(--card-top), var(--card-top)) 0 calc(var(--line) * 2 - 2px) / 100% 2px
-        no-repeat,
-      repeating-linear-gradient(
-          to bottom,
-          transparent 0 calc(var(--line) - 1px),
-          var(--card-line) calc(var(--line) - 1px) var(--line)
-        )
-        0 calc(var(--line) * 2) / 100% 100% no-repeat,
-      var(--surface);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-card);
-  }
-
-  header {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: var(--space-3);
-    height: calc(var(--line) * 2);
-    padding-bottom: 0.3rem;
-  }
-
-  h3 {
-    font-size: 1.2rem;
-    font-weight: 700;
-    line-height: var(--line);
-  }
-
-  .snapshot {
-    font-size: 0.85rem;
-    color: var(--ink-muted);
-    white-space: nowrap;
-  }
-
   .mark {
     display: flex;
     align-items: center;
     height: calc(var(--line) * 2);
   }
 
-  .models,
-  .note {
+  .models {
     font-size: 0.92rem;
     color: var(--ink-muted);
   }
@@ -96,6 +49,7 @@
 
     .mono {
       color: var(--ink);
+      white-space: nowrap;
     }
   }
 </style>

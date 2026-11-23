@@ -17,6 +17,24 @@
       yChannelSelector="G"
     />
   </filter>
+  <filter id="ink-faint" x="-5%" y="-10%" width="110%" height="120%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="1" seed="4" result="grain" />
+    <feColorMatrix
+      in="grain"
+      type="matrix"
+      values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2 2.35"
+      result="gaps"
+    />
+    <feComposite in="SourceGraphic" in2="gaps" operator="in" result="inked" />
+    <feTurbulence type="turbulence" baseFrequency="0.05" numOctaves="2" seed="9" result="wobble" />
+    <feDisplacementMap
+      in="inked"
+      in2="wobble"
+      scale="1"
+      xChannelSelector="R"
+      yChannelSelector="G"
+    />
+  </filter>
 </svg>
 
 <style>

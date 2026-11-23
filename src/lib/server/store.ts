@@ -26,8 +26,6 @@ interface LookupRow extends Omit<Lookup, 'spans' | 'indexes' | 'skipped' | 'chec
   done_at: number | null;
 }
 
-const COLUMNS = 'id, kind, url, title, published, lang, spans, indexes, skipped, picker, status';
-
 const fromRow = (row: LookupRow): Lookup => ({
   ...row,
   spans: JSON.parse(row.spans),
@@ -47,35 +45,64 @@ const one = async (where: string, value: string) => {
 export const lookupById = (id: string) => one('id', id);
 export const lookupByUrl = (url: string) => one('url', url);
 
-export async function saveLookup(lookup: Lookup) {
+const FIELDS = [
+  'url',
+  'title',
+  'published',
+  'lang',
+  'spans',
+  'indexes',
+  'skipped',
+  'picker',
+  'status',
+  'checked_at',
+  'done_at'
+];
+const marks = (values: unknown[]) => values.map(() => '?').join(', ');
+const updates = FIELDS.map((field) => `${field} = excluded.${field}`).join(', ');
+const assignments = FIELDS.map((field) => `${field} = ?`).join(', ');
+
+/** A lookup's values in FIELDS order, keeping only the hashes of pasted text */
+function fields(lookup: Lookup) {
   const spans = lookup.kind === 'paste' ? lookup.spans.map(({ hash }) => ({ hash })) : lookup.spans;
+  return [
+    lookup.url,
+    lookup.title,
+    lookup.published,
+    lookup.lang,
+    JSON.stringify(spans),
+    JSON.stringify(lookup.indexes),
+    JSON.stringify(lookup.skipped),
+    lookup.picker,
+    lookup.status,
+    lookup.checkedAt,
+    lookup.doneAt
+  ];
+}
+
+export async function saveLookup(lookup: Lookup) {
+  const values = [lookup.id, lookup.kind, ...fields(lookup)];
   await env.DB.prepare(
-    `insert into lookups (${COLUMNS}, checked_at, done_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     on conflict (id) do update set url = excluded.url, title = excluded.title,
-       published = excluded.published, lang = excluded.lang, spans = excluded.spans,
-       indexes = excluded.indexes, skipped = excluded.skipped, picker = excluded.picker,
-       status = excluded.status, checked_at = excluded.checked_at, done_at = excluded.done_at`
+    `insert into lookups (id, kind, ${FIELDS.join(', ')}) values (${marks(values)})
+     on conflict (id) do update set ${updates}`
   )
-    .bind(
-      lookup.id,
-      lookup.kind,
-      lookup.url,
-      lookup.title,
-      lookup.published,
-      lookup.lang,
-      JSON.stringify(spans),
-      JSON.stringify(lookup.indexes),
-      JSON.stringify(lookup.skipped),
-      lookup.picker,
-      lookup.status,
-      lookup.checkedAt,
-      lookup.doneAt
-    )
+    .bind(...values)
     .run();
 }
 
-export async function dropLookup(id: string) {
-  await env.DB.prepare('delete from lookups where id = ?').bind(id).run();
+/** Puts back what a refused check replaced, unless a later check has saved over it since */
+export async function undoLookup(ours: Lookup, previous: Lookup | null) {
+  const statement = previous
+    ? env.DB.prepare(`update lookups set ${assignments} where id = ? and checked_at = ?`).bind(
+        ...fields(previous),
+        ours.id,
+        ours.checkedAt
+      )
+    : env.DB.prepare('delete from lookups where id = ? and checked_at = ?').bind(
+        ours.id,
+        ours.checkedAt
+      );
+  await statement.run();
 }
 
 export async function finishLookup(id: string) {
@@ -83,8 +110,6 @@ export async function finishLookup(id: string) {
     .bind(Date.now(), id)
     .run();
 }
-
-const marks = (hashes: string[]) => hashes.map(() => '?').join(', ');
 
 export async function loadCounts(hashes: string[]) {
   if (!hashes.length) return new Map<string, number>();

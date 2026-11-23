@@ -3,7 +3,9 @@ import { CRAWLS, SCREEN, SETS, TIMELINE, type Corpus } from '#lib/corpora.ts';
 import { evaluate, key, STOCK, type Counts, type Row, type Span } from '#lib/plan.ts';
 import type { Place } from './gate.ts';
 import type { Doc } from './infinigram.ts';
-import { loadCounts, loadDocs, lookupById, type Lookup } from './store.ts';
+import { finishLookup, loadCounts, loadDocs, lookupById, type Lookup } from './store.ts';
+
+const LOST_MS = 2 * 60_000;
 
 export type CellVerdict = 'match' | 'none' | 'new' | 'pending' | 'failed';
 
@@ -99,14 +101,16 @@ function where(
     : { kind: 'sites', ready, own: 'neither', others: [] };
 }
 
-function cell(
-  corpus: Corpus,
-  lookup: Lookup,
-  rows: Row[],
-  active: Span[],
-  counts: Counts,
-  docs: Map<string, Doc[]>
-): Cell {
+interface Known {
+  lookup: Lookup;
+  rows: Row[];
+  active: Span[];
+  counts: Counts;
+  docs: Map<string, Doc[]>;
+  done: boolean;
+}
+
+function cell(corpus: Corpus, { lookup, rows, active, counts, docs, done }: Known): Cell {
   const { id, name, snapshot, models, note, card } = corpus;
   const base = { id, name, snapshot, models, note, card };
   const shown = active.map(({ hash }) => counts.get(key(corpus.index, hash)) ?? null);
@@ -114,9 +118,7 @@ function cell(
   const row = rows.find((candidate) => candidate.index === corpus.index);
   if (!row) return { ...base, verdict: 'pending', counts: shown };
   const verdict =
-    row.verdict === 'failed' || (row.verdict === 'pending' && lookup.status === 'done')
-      ? 'failed'
-      : row.verdict;
+    row.verdict === 'failed' || (row.verdict === 'pending' && done) ? 'failed' : row.verdict;
   const pageHost = lookup.url ? hostOf(lookup.url) : undefined;
   return { ...base, verdict, counts: shown, where: where(corpus, row, docs, pageHost) };
 }
@@ -129,12 +131,15 @@ export async function loadResult(id: string): Promise<Result | null> {
   const [counts, docs] = await Promise.all([loadCounts(hashes), loadDocs(hashes)]);
   const plan = { spans: lookup.spans, indexes: lookup.indexes };
   const { active, thin, rows } = evaluate(plan, counts, new Set(docs.keys()));
-  const done = lookup.status === 'done';
-  const place = done ? null : await env.GATE.getByName('line').place(id);
+  const place = lookup.status === 'done' ? null : await env.GATE.getByName('line').place(id);
+  // a check the line has lost (it gave up on it, say) is as done as it's ever going to be
+  const lost = lookup.status === 'queued' && !place && Date.now() - lookup.checkedAt > LOST_MS;
+  if (lost) await finishLookup(id);
+  const done = lookup.status === 'done' || lost;
   const stock = lookup.spans
     .map(({ hash }) => counts.get(key(SCREEN.index, hash)) ?? 0)
     .filter((count) => count > STOCK);
-  const toCell = (corpus: Corpus) => cell(corpus, lookup, rows, active, counts, docs);
+  const toCell = (corpus: Corpus) => cell(corpus, { lookup, rows, active, counts, docs, done });
   const asked = new Set([...lookup.indexes, ...lookup.skipped]);
   return {
     id: lookup.id,

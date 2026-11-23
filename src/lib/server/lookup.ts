@@ -5,7 +5,7 @@ import { hashSpan } from '#lib/spans.ts';
 import { checkAddress, fetchPage } from './fetcher.ts';
 import type { Admission } from './gate.ts';
 import { readPage } from './page.ts';
-import { dropLookup, lookupByUrl, saveLookup, type Lookup } from './store.ts';
+import { lookupByUrl, saveLookup, undoLookup, type Lookup } from './store.ts';
 
 /** Bumped whenever the picker changes, so old verdicts get counted afresh */
 export const PICKER = 1;
@@ -25,17 +25,16 @@ export function normalise(input: URL) {
 
 const bare = (host: string) => host.replace(/^www\./, '');
 
-/** The page's own canonical address if it's on the same site, as copies of copies abound */
+/** The page's own canonical address if it's a plain one on the same site, as copies abound */
 function canonicalOf(href: string | undefined, landed: URL) {
   if (!href) return normalise(landed);
   try {
-    const canonical = new URL(href, landed);
-    return bare(canonical.hostname) === bare(landed.hostname)
-      ? normalise(canonical)
-      : normalise(landed);
+    const canonical = checkAddress(new URL(href, landed));
+    if (bare(canonical.hostname) === bare(landed.hostname)) return normalise(canonical);
   } catch {
-    return normalise(landed);
+    // a canonical we wouldn't fetch isn't one worth filing a result under
   }
+  return normalise(landed);
 }
 
 /** Sets a dated page can't be in are "too new" without asking, unless someone asks anyway */
@@ -53,22 +52,35 @@ export const newId = () =>
     .replaceAll('+', '-')
     .replaceAll('/', '_');
 
-const fresh = (lookup: Lookup | null) =>
-  !!lookup && lookup.picker === PICKER && Date.now() - lookup.checkedAt < STALE_MS;
+const gate = () => env.GATE.getByName('line');
+
+/** A recent result to send people to, or one still in the line even when they asked anyway */
+async function reuse(lookup: Lookup | null, force: boolean) {
+  if (!lookup || lookup.picker !== PICKER || Date.now() - lookup.checkedAt > STALE_MS) return;
+  if (lookup.status === 'queued') return (await gate().place(lookup.id)) ? lookup.id : undefined;
+  return force ? undefined : lookup.id;
+}
 
 async function queue(lookup: Lookup, who: string, previous: Lookup | null): Promise<Outcome> {
-  await saveLookup(lookup);
+  try {
+    await saveLookup(lookup);
+  } catch (error) {
+    // somebody else filed the same page a moment ago, so theirs it is
+    const winner = lookup.url ? await lookupByUrl(lookup.url) : null;
+    if (winner && winner.id !== lookup.id) return { id: winner.id };
+    throw error;
+  }
   if (lookup.status === 'done') return { id: lookup.id };
   const plan = { spans: lookup.spans, indexes: lookup.indexes };
-  const admission = await env.GATE.getByName('line').admit({
-    id: lookup.id,
-    plan,
-    cost: estimate(plan),
-    kind: 'url',
-    who
-  });
+  const ticket = { id: lookup.id, plan, cost: estimate(plan), kind: 'url' as const, who };
+  const admission = await gate()
+    .admit(ticket)
+    .catch(async (error: unknown) => {
+      await undoLookup(lookup, previous);
+      throw error;
+    });
   if (admission.ok) return { id: lookup.id };
-  await (previous ? saveLookup(previous) : dropLookup(lookup.id));
+  await undoLookup(lookup, previous);
   return { refused: admission };
 }
 
@@ -76,13 +88,15 @@ async function queue(lookup: Lookup, who: string, previous: Lookup | null): Prom
 export async function lookUpUrl(input: string, who: string, force = false): Promise<Outcome> {
   const asked = normalise(checkAddress(input.trim()));
   const cached = await lookupByUrl(asked);
-  if (fresh(cached) && !force) return { id: cached!.id };
+  const known = await reuse(cached, force);
+  if (known) return { id: known };
 
   const { url: landed, html } = await fetchPage(asked);
   const page = readPage(html);
   const url = canonicalOf(page.canonical, landed);
   const previous = url === asked ? cached : await lookupByUrl(url);
-  if (fresh(previous) && !force) return { id: previous!.id };
+  const filed = url === asked ? undefined : await reuse(previous, force);
+  if (filed) return { id: filed };
 
   const spans: Span[] = await Promise.all(
     page.spans.map(async (text) => ({ text, hash: await hashSpan(text) }))

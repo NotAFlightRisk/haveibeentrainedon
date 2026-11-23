@@ -22,6 +22,7 @@ interface SqlStorage {
 }
 
 interface DurableObjectState {
+  blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>;
   storage: {
     sql: SqlStorage;
     getAlarm(): Promise<number | null>;

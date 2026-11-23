@@ -1,5 +1,5 @@
 import { DurableObject, env } from 'cloudflare:workers';
-import { byIndex, SCREEN, SETS } from '#lib/corpora.ts';
+import { byIndex, SCREEN, SETS, type Api } from '#lib/corpora.ts';
 import { evaluate, FAILED, key, type Plan, type Step } from '#lib/plan.ts';
 import { count, documents, Throttled } from './infinigram.ts';
 import { report } from './report.ts';
@@ -9,9 +9,12 @@ const MINUTE = 60_000;
 const PAUSE_MS = 2 * MINUTE;
 const SLOW_MS = 60 * MINUTE;
 const LINE_MS = 10 * MINUTE;
+const RETRY_MS = 30_000;
+const GIVE_UP_MS = 30 * MINUTE;
 const TRIES = 3;
 const LIMITS = { url: { most: 5, per: 60 * MINUTE } };
 const CANARY = 'what goes on the internet stays on the internet';
+const CANARIES: Record<Api, string> = { v4: SETS[0].index, mini: SCREEN.index };
 
 export type Kind = keyof typeof LIMITS;
 
@@ -42,6 +45,7 @@ interface Job {
   calls: number;
   tries: number;
   failed: string;
+  added: number;
 }
 
 /** The one line every call to the corpus host waits in, one call per alarm */
@@ -60,6 +64,8 @@ export class Gate extends DurableObject {
     this.sql.exec(
       'create table if not exists state (key text primary key, value integer not null)'
     );
+    // a line with nobody waking it would sit there until the next visitor
+    ctx.blockConcurrencyWhile(() => (this.jobs().length ? this.wake() : Promise.resolve()));
   }
 
   private get(name: string) {
@@ -81,6 +87,17 @@ export class Gate extends DurableObject {
     return now < (this.get('slow') ?? 0) ? base * 2 : base;
   }
 
+  /** The soonest the next call may go, whatever asked for it */
+  private due() {
+    return Math.max(this.get('next') ?? 0, this.get('paused') ?? 0);
+  }
+
+  private async wake() {
+    if (!(await this.ctx.storage.getAlarm())) {
+      await this.ctx.storage.setAlarm(Math.max(Date.now(), this.due()));
+    }
+  }
+
   private jobs() {
     return this.sql.exec<Job>('select * from line order by seq').toArray();
   }
@@ -99,6 +116,8 @@ export class Gate extends DurableObject {
   }
 
   async admit(ticket: Ticket): Promise<Admission> {
+    const waiting = await this.place(ticket.id);
+    if (waiting) return { ok: true, ahead: waiting.ahead, wait: waiting.wait };
     const now = Date.now();
     const limit = LIMITS[ticket.kind];
     const who = await this.who(ticket.who);
@@ -120,17 +139,13 @@ export class Gate extends DurableObject {
     if (over > 0) return { ok: false, reason: 'busy', retryAt: now + over };
     this.sql.exec('insert into seen (who, kind, at) values (?, ?, ?)', who, ticket.kind, now);
     this.sql.exec(
-      `insert into line (id, plan, cost, added) values (?, ?, ?, ?)
-       on conflict (id) do update set plan = excluded.plan, cost = excluded.cost, calls = 0,
-         tries = 0, failed = '[]'`,
+      'insert into line (id, plan, cost, added) values (?, ?, ?, ?)',
       ticket.id,
       JSON.stringify(ticket.plan),
       ticket.cost,
       now
     );
-    if (!(await this.ctx.storage.getAlarm())) {
-      await this.ctx.storage.setAlarm(Math.max(now, this.get('next') ?? 0));
-    }
+    await this.wake();
     return { ok: true, ahead: queued, wait: queued * interval };
   }
 
@@ -160,31 +175,39 @@ export class Gate extends DurableObject {
     };
   }
 
-  /** Keeps /health honest when nobody's looked anything up for a while */
+  /** One call to whichever API we've asked least lately, so /health stays honest when it's quiet */
   async canary() {
-    const quiet = Date.now() - (this.get('called') ?? 0) > 50 * MINUTE;
-    if (!quiet || this.jobs().length || (await this.ctx.storage.getAlarm())) return;
-    for (const { index } of [SETS[0], SCREEN]) {
-      await this.call({ kind: 'count', index, span: { hash: '', text: CANARY } });
+    const now = Date.now();
+    const quiet = now - (this.get('called') ?? 0) > 50 * MINUTE;
+    if (!quiet || now < this.due() || this.jobs().length || (await this.ctx.storage.getAlarm())) {
+      return;
     }
+    const api = (['v4', 'mini'] as const).toSorted(
+      (a, b) => (this.get(`tried:${a}`) ?? 0) - (this.get(`tried:${b}`) ?? 0)
+    )[0];
+    await this.call({ kind: 'count', index: CANARIES[api], span: { hash: '', text: CANARY } });
   }
 
   async alarm() {
-    const now = Date.now();
-    const pausedUntil = this.get('paused') ?? 0;
-    if (now < pausedUntil) return this.ctx.storage.setAlarm(pausedUntil);
+    const due = this.due();
+    if (Date.now() < due) return this.ctx.storage.setAlarm(due);
     for (const job of this.jobs()) {
-      const step = await this.nextStep(job);
+      let step: Step | undefined;
+      try {
+        step = await this.nextStep(job);
+        if (!step) await finishLookup(job.id);
+      } catch (error) {
+        await report(error, undefined, 'gate');
+        if (Date.now() - job.added < GIVE_UP_MS) {
+          return this.ctx.storage.setAlarm(Date.now() + RETRY_MS);
+        }
+      }
       if (!step) {
-        await finishLookup(job.id);
         this.sql.exec('delete from line where seq = ?', job.seq);
         continue;
       }
-      const outcome = await this.call(step, job);
-      if (outcome === 'throttled') return this.ctx.storage.setAlarm(this.get('paused') ?? now);
-      const next = Date.now() + this.interval();
-      this.set('next', next);
-      return this.ctx.storage.setAlarm(next);
+      await this.call(step, job);
+      return this.ctx.storage.setAlarm(this.due());
     }
   }
 
@@ -202,10 +225,13 @@ export class Gate extends DurableObject {
     return evaluate(plan, counts, fetched).next;
   }
 
+  /** Makes one call and books the next slot, whether it worked or not */
   private async call(step: Step, job?: Job) {
     const query = step.span.text ?? '';
     const api = byIndex(step.index)?.api ?? 'v4';
-    this.set('called', Date.now());
+    const now = Date.now();
+    this.set('called', now);
+    this.set(`tried:${api}`, now);
     try {
       if (step.kind === 'count') {
         const found = await count(step.index, query);
@@ -215,18 +241,16 @@ export class Gate extends DurableObject {
       }
       this.set(`ok:${api}`, Date.now());
       if (job) this.sql.exec('update line set calls = calls + 1, tries = 0 where seq = ?', job.seq);
-      return 'ok';
     } catch (error) {
-      if (error instanceof Throttled) {
-        const now = Date.now();
-        this.set('paused', now + PAUSE_MS);
-        this.set('slow', now + PAUSE_MS + SLOW_MS);
-        await report(error, undefined, 'gate');
-        return 'throttled';
-      }
       await report(error, undefined, 'gate');
-      if (job) this.giveUpAfterTries(job, `${step.kind} ${key(step.index, step.span.hash)}`);
-      return 'failed';
+      if (error instanceof Throttled) {
+        this.set('paused', Date.now() + PAUSE_MS);
+        this.set('slow', Date.now() + PAUSE_MS + SLOW_MS);
+      } else if (job) {
+        this.giveUpAfterTries(job, `${step.kind} ${key(step.index, step.span.hash)}`);
+      }
+    } finally {
+      this.set('next', Date.now() + this.interval());
     }
   }
 

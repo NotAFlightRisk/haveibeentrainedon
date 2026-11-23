@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { SCREEN, SETS } from '#lib/corpora.ts';
-import { decide, docsStep, evaluate, FAILED, key, screen, STOCK, type Span } from '#lib/plan.ts';
+import {
+  decide,
+  docsStep,
+  estimate,
+  evaluate,
+  FAILED,
+  key,
+  screen,
+  STOCK,
+  type Span
+} from '#lib/plan.ts';
 
 const spans: Span[] = ['a', 'b', 'c', 'd', 'e'].map((hash) => ({ hash, text: `span ${hash}` }));
 const [c4, pile, rpj] = SETS.map((set) => set.index);
@@ -22,6 +32,13 @@ describe('screen', () => {
     const result = screen(spans, counts(screened(3, STOCK + 1, 0, 1)));
     expect(result.next).toBeUndefined();
     expect(result.active.map(({ hash }) => hash)).toEqual(['a', 'c', 'd']);
+  });
+
+  it("prefers a screened spare to a span the crawl wouldn't count, and falls back to it", () => {
+    const spared = screen(spans, counts(screened(FAILED, 3, 0, 1)));
+    expect(spared.active.map(({ hash }) => hash)).toEqual(['b', 'c', 'd']);
+    const fallback = screen(spans, counts(screened(FAILED, 3, 0, 900, 900)));
+    expect(fallback.active.map(({ hash }) => hash)).toEqual(['a', 'b', 'c']);
   });
 
   it('settles for two spans when the spares are stock too', () => {
@@ -126,6 +143,14 @@ describe('evaluate', () => {
 
   it('has nothing to do when every set is too new', () => {
     expect(evaluate({ spans, indexes: [] }, new Map()).next).toBeUndefined();
+  });
+});
+
+describe('estimate', () => {
+  it('covers the screen, two or three counts a set and every list of documents', () => {
+    const everything = [...SETS.map((set) => set.index), SCREEN.index, 'v2_cc-2025-30'];
+    expect(estimate({ spans, indexes: everything })).toBe(3 + 15 + 7);
+    expect(estimate({ spans, indexes: [] })).toBe(0);
   });
 });
 

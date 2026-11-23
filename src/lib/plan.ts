@@ -34,18 +34,25 @@ export interface Plan {
 
 export const key = (index: string, hash: string) => `${index} ${hash}`;
 
-/** Counts each candidate in January 2025's crawl until three aren't stock, using spares if it must */
+/**
+ * Counts each candidate in January 2025's crawl until three aren't stock, using spares if it
+ * must. One the crawl wouldn't count only gets in when the spares have run out
+ */
 export function screen(spans: Span[], counts: Counts) {
   const active: Span[] = [];
+  const unchecked: Span[] = [];
   for (const span of spans) {
     if (active.length === PRIMARY) break;
     const count = counts.get(key(SCREEN.index, span.hash));
     if (count === undefined) {
       return { active, next: { kind: 'count', index: SCREEN.index, span } satisfies Step };
     }
-    if (count <= STOCK) active.push(span);
+    if (count === FAILED) unchecked.push(span);
+    else if (count <= STOCK) active.push(span);
   }
-  return { active };
+  const order = (span: Span) => spans.indexOf(span);
+  const filled = [...active, ...unchecked.slice(0, PRIMARY - active.length)];
+  return { active: filled.sort((a, b) => order(a) - order(b)) };
 }
 
 /** Two of three spans is a match, so the third only gets counted when the first two disagree */
@@ -92,6 +99,15 @@ export function evaluate(plan: Plan, counts: Counts, fetched: ReadonlySet<string
   return { active, thin: false, rows, next };
 }
 
-/** Roughly how many calls a plan costs, for the line's sums */
-export const estimate = (plan: Plan) =>
-  plan.indexes.length ? 3 + 2 * plan.indexes.filter((i) => i !== SCREEN.index).length + 4 : 0;
+const DOCS_CALLS = { urls: 2, slice: 1, part: 0 };
+
+/** A cautious guess at a plan's calls: the screen, two or three counts a set, every list of documents */
+export function estimate(plan: Plan) {
+  if (!plan.indexes.length) return 0;
+  const counted = plan.indexes.filter((index) => index !== SCREEN.index);
+  const docs = counted.reduce((sum, index) => {
+    const sources = byIndex(index)?.sources;
+    return sum + (sources ? DOCS_CALLS[sources] : 0);
+  }, 0);
+  return Math.ceil(PRIMARY + 2.5 * counted.length + docs);
+}

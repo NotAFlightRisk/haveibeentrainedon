@@ -1,0 +1,53 @@
+name: 🔎 Indexes
+
+on:
+  schedule:
+    - cron: '17 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: 🔎 New infini-gram indexes
+    if: github.repository_owner == 'NotAFlightRisk'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      HAS_BOT: ${{ secrets.BOT_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        id: bot
+        if: env.HAS_BOT == 'true'
+        with:
+          client-id: Iv23liPIG7E12UlaQMaD
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          permission-issues: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Look for indexes we haven't seen
+        run: node scripts/check-indexes.mjs > found.md
+      - name: Open an issue, unless one's already open
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token || github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: New infini-gram indexes
+        run: |
+          if [ ! -s found.md ]; then
+            echo "Nothing new" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          cat found.md >> "$GITHUB_STEP_SUMMARY"
+          open=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number -q '.[0].number')
+          if [ -n "$open" ]; then
+            echo "Already open as #$open" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh issue create --title "$TITLE" --body-file found.md
+          fi

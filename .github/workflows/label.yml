@@ -1,0 +1,60 @@
+name: 🏷️ Label
+
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] reads the PR's title, never checks out its code
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: 🏷️ Sort by type
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
+    permissions:
+      pull-requests: write
+    env:
+      HAS_BOT: ${{ secrets.BOT_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        id: bot
+        if: env.HAS_BOT == 'true'
+        with:
+          client-id: Iv23liPIG7E12UlaQMaD
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          permission-pull-requests: write
+      - name: Take the label off the conventional commit type
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token || github.token }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          prefix=${TITLE%%:*}
+          type=${prefix%%(*}
+          case "${type%!}" in
+            feat) wanted=enhancement ;;
+            fix)  wanted=bug ;;
+            docs) wanted=documentation ;;
+            *)    wanted= ;;
+          esac
+          case "$prefix" in
+            *'!') wanted="${wanted:+$wanted,}breaking-change" ;;
+          esac
+          for label in enhancement bug documentation breaking-change; do
+            case ",$wanted," in
+              *",$label,"*) ;;
+              *) stale="${stale:+$stale,}$label" ;;
+            esac
+          done
+          args=(--remove-label "$stale")
+          if [ -n "$wanted" ]; then
+            args+=(--add-label "$wanted")
+          fi
+          gh pr edit "$NUMBER" "${args[@]}"
+          echo "### ${wanted:-no type label}" >> "$GITHUB_STEP_SUMMARY"

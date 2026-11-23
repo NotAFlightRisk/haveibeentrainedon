@@ -1,0 +1,54 @@
+name: 📦 Release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      BOT_PRIVATE_KEY:
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: 📦 Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      HAS_BOT: ${{ secrets.BOT_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        id: bot
+        if: env.HAS_BOT == 'true'
+        with:
+          client-id: Iv23liPIG7E12UlaQMaD
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Publish the release, with notes since the last one
+        env:
+          GH_TOKEN: ${{ steps.bot.outputs.token || github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::error::$TAG is already out, and a published release can't be changed"
+            exit 1
+          fi
+          since=$(gh release list --exclude-drafts --limit 1 --json tagName -q '.[0].tagName')
+          since=${since:-$(gh api "repos/$GH_REPO/tags" --paginate -q '.[].name' | sort -V | head -n1)}
+          [ "$since" = "$TAG" ] && since=
+          gh release create "$TAG" --verify-tag --title "$TAG" --latest \
+            --generate-notes ${since:+--notes-start-tag "$since"}
+          url="$GITHUB_SERVER_URL/$GH_REPO/releases/tag/$TAG"
+          echo "📦 Released [$TAG]($url)" >> "$GITHUB_STEP_SUMMARY"

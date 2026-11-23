@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "haveibeentrainedon",
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": ".svelte-kit/cloudflare", "binding": "ASSETS" },
+  "observability": { "enabled": true },
+  "workers_dev": false,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "haveibeentrainedon",
+      "database_id": "5f7de9e1-bc4e-4919-ad07-cb5df659e9f7",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": { "bindings": [{ "name": "GATE", "class_name": "Gate" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Gate"] }],
+  "triggers": { "crons": ["23 * * * *"] },
+  "vars": { "GATE_MS": "2000", "TURNSTILE_SITEKEY": "0x4AAAAAAGPOYUpkYtoMcbmq" },
+  "routes": [{ "pattern": "haveibeentrainedon.peng.ly", "custom_domain": true }]
+}

@@ -13,6 +13,13 @@ export const load: PageServerLoad = async ({ params }) => {
   return { result, ogImage: result.thin ? '/og.png' : ogImage(result.sets) };
 };
 
+const NOT_ASKED = {
+  down: "Common Crawl's index didn't answer. Give it a minute.",
+  busy: "Common Crawl's index is busy with other pages. Try again in a few minutes.",
+  resting:
+    'Nothing to ask about just yet. A crawl the index missed can be asked about again ten minutes on, and new ones turn up about once a month.'
+};
+
 export const actions: Actions = {
   crawls: async ({ params }) => {
     const lookup = await lookupById(params.id);
@@ -20,15 +27,9 @@ export const actions: Actions = {
     const page = unwrap(lookup.url)?.original ?? lookup.url;
     const asked = await askCaptures(page, lookup.id).catch(async (problem: unknown) => {
       await report(problem, undefined, 'crawls');
-      return undefined;
+      return 'down' as const;
     });
-    if (asked === undefined) {
-      return fail(503, { crawlError: "Common Crawl's index didn't answer. Give it a minute." });
-    }
-    if (!asked) {
-      return fail(429, {
-        crawlError: "Common Crawl's index is busy with other pages. Try again in a few minutes."
-      });
-    }
+    if (asked !== 'asked')
+      return fail(asked === 'down' ? 503 : 429, { crawlError: NOT_ASKED[asked] });
   }
 };

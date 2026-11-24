@@ -22,17 +22,25 @@ export const LETTERS: Partial<Record<CellVerdict, string>> = { match: 'm', none:
 
 /** The result page's one-line verdict */
 export function headlineFor({ thin, done, sets }: Outcome) {
-  const asked = sets.filter(({ verdict }) => verdict !== 'new');
+  const asked = sets.filter(({ verdict }) => verdict !== 'new' && verdict !== 'failed');
   const matched = asked.filter(({ verdict }) => verdict === 'match').length;
   const waiting = asked.filter(({ verdict }) => verdict === 'pending').length;
-  const old = asked.length === sets.length ? 'open training sets' : 'sets old enough to hold it';
+  const failed = sets.some(({ verdict }) => verdict === 'failed');
+  const kind = sets.some(({ verdict }) => verdict === 'new')
+    ? 'sets old enough to hold it'
+    : 'open training sets';
+  const old = failed ? `${kind} we could check` : kind;
   if (thin) return "This page hasn't got enough sentences of its own to search for";
-  if (!asked.length) return 'This page is newer than every training set we can search';
+  if (!asked.length) {
+    return failed
+      ? "The corpus host wouldn't answer for this page, so try it again later"
+      : 'This page is newer than every training set we can search';
+  }
   if (!done) return `Checking... ${asked.length - waiting} of ${asked.length} sets done`;
   if (asked.length === 1) {
     return matched
-      ? 'Text from this page is in the one set old enough to hold it'
-      : 'No match for these sentences in the one set old enough to hold it';
+      ? `Text from this page is in the one ${old.replace('sets', 'set')}`
+      : `No match for these sentences in the one ${old.replace('sets', 'set')}`;
   }
   if (matched === asked.length) return `Text from this page is in all ${asked.length} ${old}`;
   if (matched) return `Text from this page is in ${matched} of the ${asked.length} ${old}`;

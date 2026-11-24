@@ -35,3 +35,17 @@ describe('headlineFor', () => {
     );
   });
 });
+
+describe('headlineFor, when the corpus host fails', () => {
+  it("leaves a set it couldn't check out of the count", () => {
+    expect(headlineFor(finished('none', 'none', 'failed', 'none', 'none'))).toBe(
+      'No match for these sentences in any of the 4 open training sets we could check'
+    );
+  });
+
+  it('says so when it could check none of them', () => {
+    expect(headlineFor(finished('failed', 'failed', 'failed', 'failed', 'failed'))).toBe(
+      "The corpus host wouldn't answer for this page, so try it again later"
+    );
+  });
+});

@@ -111,25 +111,26 @@ export async function lookUpDomain(input: URL, who: string): Promise<Outcome> {
 
 /** Swaps one post in a sample for another, twice a sample at most */
 export async function swapPost(id: string, url: string, who: string): Promise<Outcome | null> {
-  const found = await domainById(id);
-  const listed = found?.picked.some((post) => post.url === url);
-  if (!found || !listed || !(await claimSwap(id, MOST_SWAPS))) return null;
+  if (!(await claimSwap(id, MOST_SWAPS))) return null;
   try {
-    const outcome = await retryingRaces(async (): Promise<Outcome> => {
+    const outcome = await retryingRaces(async (): Promise<Outcome | null> => {
+      // read after claiming, so a swap that landed meanwhile is already in the list
+      const found = await domainById(id);
+      if (!found?.picked.some((post) => post.url === url)) return null;
       const tried = new Set(found.tried);
       const [next] = await sample(found.posts, tried, 1);
       if (!next) throw new DomainError("We've tried every post we could find on that site.");
       const filed = await file([next.item], 'swap', who);
       if ('refused' in filed) return filed;
-      // another post may have been swapped meanwhile, so this one changes on the latest list
       const latest = (await domainById(id)) ?? found;
+      if (!latest.picked.some((post) => post.url === url)) return null;
       const picked = latest.picked.map((post) =>
         post.url === url ? { url: next.url, lookup: filed.ids[0] } : post
       );
       await savePicked(id, picked, [...new Set([...latest.tried, ...tried])]);
       return { id };
     });
-    if ('refused' in outcome) await releaseSwap(id);
+    if (!outcome || 'refused' in outcome) await releaseSwap(id);
     return outcome;
   } catch (error) {
     await releaseSwap(id);

@@ -134,7 +134,9 @@ export class Gate extends DurableObject {
       quick: Boolean(current.quick && plan.quick),
       deeper: Boolean(current.deeper || plan.deeper)
     };
-    const cost = Math.max(estimate(wider), job.calls + 1);
+    // calls already spent on sentences the page no longer has don't count towards the new ones
+    const respun = JSON.stringify(current.spans) !== JSON.stringify(plan.spans);
+    const cost = respun ? job.calls + estimate(wider) : Math.max(estimate(wider), job.calls + 1);
     return { id, plan: wider, cost, added: cost - job.cost };
   }
 

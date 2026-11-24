@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import { track } from '#lib/plausible.ts';
   import { hashSpan, pastedSpans } from '#lib/spans.ts';
   import { turnstile } from '#lib/turnstile.ts';
 
@@ -26,7 +27,8 @@
   use:enhance={async ({ formData }) => {
     sending = true;
     await remember(String(formData.get('text') ?? ''));
-    return async ({ update }) => {
+    return async ({ result, update }) => {
+      if (result.type === 'redirect') track('Check');
       await update({ reset: false });
       sending = false;
       tries++;

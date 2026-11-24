@@ -40,10 +40,10 @@ describe('toSpan', () => {
 });
 
 describe('pickSpans', () => {
-  it('spreads three spans through the page, then two spares', () => {
+  it('spreads three spans through the page and two spares, then a second round of the rest', () => {
     const spans = pickSpans([paragraph(1, 2, 3, 4, 5, 6, 7, 8, 9)]);
-    expect(spans).toHaveLength(5);
     expect(spans.slice(0, 3)).toEqual([2, 5, 8].map((n) => toSpan(sentence(n))));
+    expect(new Set(spans).size).toBe(9);
   });
 
   it('gives what it can when the page is short', () => {

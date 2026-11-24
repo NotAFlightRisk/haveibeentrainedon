@@ -3,12 +3,16 @@
   import { invalidateAll } from '$app/navigation';
   import Band from '#lib/components/Band.svelte';
   import CallSlip from '#lib/components/CallSlip.svelte';
+  import Captures from '#lib/components/Captures.svelte';
+  import DownloadCard from '#lib/components/DownloadCard.svelte';
   import Caveats from '#lib/components/Caveats.svelte';
   import CrawlCard from '#lib/components/CrawlCard.svelte';
   import IndexCard from '#lib/components/IndexCard.svelte';
   import { minutes, plural } from '#lib/format.ts';
+  import { headlineFor } from '#lib/share.ts';
+  import { snapshot, unwrap } from '#lib/wayback.ts';
 
-  let { data } = $props();
+  let { data, form } = $props();
 
   let mounted = $state(false);
   onMount(() => (mounted = true));
@@ -30,28 +34,9 @@
         }
       : data.result
   );
-  const asked = $derived(result.sets.filter((cell) => cell.verdict !== 'new'));
-  const matched = $derived(asked.filter((cell) => cell.verdict === 'match'));
-  const waiting = $derived(asked.filter((cell) => cell.verdict === 'pending'));
-  const missed = $derived(asked.some((cell) => cell.verdict === 'none'));
-  const old = $derived(
-    asked.length === result.sets.length ? 'open training sets' : 'sets old enough to hold it'
-  );
+  const missed = $derived(result.sets.some((cell) => cell.verdict === 'none'));
 
-  const headline = $derived.by(() => {
-    if (result.thin) return "This page hasn't got enough sentences of its own to search for";
-    if (!asked.length) return 'This page is newer than every training set we can search';
-    if (!result.done)
-      return `Checking... ${asked.length - waiting.length} of ${asked.length} sets done`;
-    if (matched.length === asked.length) {
-      return asked.length === 1
-        ? `Text from this page is in the one set old enough to hold it`
-        : `Text from this page is in all ${asked.length} ${old}`;
-    }
-    if (matched.length)
-      return `Text from this page is in ${matched.length} of the ${asked.length} ${old}`;
-    return `No match for these sentences in any of the ${asked.length} ${old}`;
-  });
+  const headline = $derived(headlineFor(result));
 
   const progress = $derived.by(() => {
     const place = result.place;
@@ -74,10 +59,19 @@
       ? again('between')
       : undefined
   );
+  const deeper = $derived(result.done && missed && result.more ? again('deeper') : undefined);
+  // the oldest copy is the page as it first went up, before any edits since
+  const archived = $derived(
+    result.done && missed && result.url && !unwrap(result.url)
+      ? `/?url=${encodeURIComponent(snapshot(result.url, '1996-01-01'))}`
+      : undefined
+  );
+
+  const asking = $derived(result.captures.some((capture) => capture.state === 'waiting'));
 
   $effect(() => {
-    if (result.done) return;
-    const soon = result.place?.ahead === 0 ? 5_000 : 20_000;
+    if (result.done && !asking) return;
+    const soon = result.place?.ahead === 0 || asking ? 5_000 : 20_000;
     const timer = setTimeout(() => invalidateAll(), soon);
     return () => clearTimeout(timer);
   });
@@ -134,6 +128,20 @@
           <CrawlCard crawls={result.crawls} {between} />
         </div>
       </div>
+      {#if result.url && (result.done || result.captures.length)}
+        <Captures captures={result.captures} error={form?.crawlError} />
+      {/if}
+      {#if deeper || archived}
+        <p class="more">
+          A miss can just mean these sentences were edited since, or quoted from somewhere.
+          {#if deeper}
+            <a href={deeper}>Try three more of the page's sentences</a> on the sets that missed.
+          {/if}
+          {#if archived}
+            Or check <a href={archived}>the Wayback Machine's oldest copy</a> of the page.
+          {/if}
+        </p>
+      {/if}
     </section>
 
     {#if !missed}
@@ -142,6 +150,9 @@
   {/if}
 
   <p class="json">
+    {#if result.done && !result.thin}
+      <DownloadCard {result} />
+    {/if}
     <a href="/api/result/{result.id}">This result as JSON</a>
   </p>
 </main>
@@ -209,6 +220,16 @@
     font-weight: 600;
   }
 
+  .more {
+    max-width: var(--measure);
+    color: var(--ink-muted);
+
+    a {
+      color: var(--ink);
+      font-weight: 600;
+    }
+  }
+
   .note {
     max-width: var(--measure);
     padding: var(--space-3) var(--space-4);
@@ -218,6 +239,10 @@
   }
 
   .json {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3) var(--space-5);
     font-size: 0.9rem;
   }
 </style>

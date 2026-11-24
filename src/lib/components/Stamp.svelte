@@ -1,19 +1,21 @@
 <script lang="ts">
   import type { CellVerdict } from '#lib/server/result.ts';
+  import { SHORT, STAMPS } from '#lib/share.ts';
 
-  let { verdict, delay = 0 }: { verdict: CellVerdict; delay?: number } = $props();
+  interface Props {
+    verdict: CellVerdict;
+    delay?: number;
+    /** For a table cell, where the column already says what was searched */
+    short?: boolean;
+  }
 
-  const words: Record<CellVerdict, string> = {
-    match: 'Match',
-    none: 'No match for these sentences',
-    new: 'Too new',
-    pending: 'Checking',
-    failed: "Couldn't check"
-  };
+  let { verdict, delay = 0, short = false }: Props = $props();
+
+  const words = $derived(short ? SHORT : STAMPS);
 </script>
 
 {#key verdict}
-  <p class="stamp {verdict}" style:--delay="{delay}ms">{words[verdict]}</p>
+  <p class="stamp {verdict}" class:short style:--delay="{delay}ms">{words[verdict]}</p>
 {/key}
 
 <style>
@@ -66,6 +68,27 @@
       border-style: dashed;
       font-size: 0.85rem;
       filter: url(#ink-faint);
+    }
+
+    &.short {
+      padding-inline: var(--space-2);
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+
+      &.match {
+        font-size: 1rem;
+      }
+
+      @media (width < 40rem) {
+        padding-inline: var(--space-1);
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+
+        &.match {
+          font-size: 0.85rem;
+        }
+      }
     }
   }
 

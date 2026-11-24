@@ -2,12 +2,17 @@
   import '../app.css';
   import { page } from '$app/state';
   import InkFilter from '#lib/components/InkFilter.svelte';
+  import { SITE } from '#lib/share.ts';
 
   let { children } = $props();
 </script>
 
+<svelte:head>
+  <meta property="og:image" content="https://{SITE}{page.data.ogImage ?? '/og.png'}" />
+</svelte:head>
+
 <InkFilter />
-<div class="site" class:wide={page.route.id === '/r/[id]'}>
+<div class="site" class:wide={page.route.id === '/r/[id]' || page.route.id === '/d/[id]'}>
   {@render children()}
 
   <footer>

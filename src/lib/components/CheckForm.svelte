@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import { track } from '#lib/plausible.ts';
   import { turnstile } from '#lib/turnstile.ts';
 
   interface Props {
@@ -7,10 +8,19 @@
     value?: string;
     force?: boolean;
     between?: boolean;
+    deeper?: boolean;
     error?: string;
   }
 
-  let { sitekey, value = '', force = false, between = false, error }: Props = $props();
+  let {
+    sitekey,
+    value = '',
+    force = false,
+    between = false,
+    deeper = false,
+    error
+  }: Props = $props();
+  const asks = $derived(Object.entries({ force, between, deeper }).filter(([, asked]) => asked));
   let sending = $state(false);
   let tries = $state(0);
 </script>
@@ -20,7 +30,10 @@
   action="/?/check"
   use:enhance={() => {
     sending = true;
-    return async ({ update }) => {
+    return async ({ result, update }) => {
+      if (result.type === 'redirect') {
+        track(result.location.startsWith('/d/') ? 'Domain check' : 'Check');
+      }
       await update({ reset: false });
       sending = false;
       tries++;
@@ -44,12 +57,9 @@
     />
     <button disabled={sending}>{sending ? 'Fetching...' : 'Check'}</button>
   </div>
-  {#if force}
-    <input type="hidden" name="force" value="1" />
-  {/if}
-  {#if between}
-    <input type="hidden" name="between" value="1" />
-  {/if}
+  {#each asks as [name] (name)}
+    <input type="hidden" {name} value="1" />
+  {/each}
   {#if sitekey}
     <div class="human" use:turnstile={{ sitekey, tries }}></div>
   {/if}

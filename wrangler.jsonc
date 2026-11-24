@@ -16,8 +16,16 @@
       "migrations_dir": "migrations"
     }
   ],
-  "durable_objects": { "bindings": [{ "name": "GATE", "class_name": "Gate" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Gate"] }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "GATE", "class_name": "Gate" },
+      { "name": "CRAWLS", "class_name": "Crawls" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Gate"] },
+    { "tag": "v2", "new_sqlite_classes": ["Crawls"] }
+  ],
   "triggers": { "crons": ["23 * * * *"] },
   "vars": { "GATE_MS": "2000", "TURNSTILE_SITEKEY": "0x4AAAAAAGPOYUpkYtoMcbmq" },
   "routes": [{ "pattern": "haveibeentrainedon.peng.ly", "custom_domain": true }]

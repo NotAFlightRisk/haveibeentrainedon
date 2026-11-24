@@ -1,5 +1,6 @@
 User-agent: *
 Disallow: /r/
+Disallow: /d/
 Disallow: /api/
 
 Sitemap: https://haveibeentrainedon.peng.ly/sitemap.xml

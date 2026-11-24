@@ -22,7 +22,7 @@
 
 ## About
 
-Paste the address of something you wrote (or the text itself, for pages it can't fetch), and it looks for three of its sentences in the actual text of C4, the Pile, RedPajama, Dolma 1.7 and DCLM, plus January and July 2025's Common Crawls. Each set gets a straight answer (match, no match, or too new for it), along with which models it trained and whether the copies it found are on your own site or someone else's.
+Paste the address of something you wrote (or the text itself, for pages it can't fetch), and it looks for three of its sentences in the actual text of C4, the Pile, RedPajama, Dolma 1.7 and DCLM, plus January and July 2025's Common Crawls. Each set gets a straight answer (match, no match, or too new for it), along with which models it trained and whether the copies it found are on your own site or someone else's. Put in just a domain and it checks a sample of 4 posts from the site instead.
 
 Other checkers read Common Crawl's index and guess from there. This searches the training text itself, using [infini-gram](https://infini-gram.io/).
 
@@ -46,7 +46,10 @@ It's one Cloudflare Worker: a SvelteKit site plus a Durable Object, over D1.
 - For C4, Dolma and DCLM matches it pulls up to 10 documents per sentence and groups them by site. RedPajama gets its slice named, and the Pile has no sources to give.
 - All of that is one call at a time through the `Gate` Durable Object: one call per alarm, 2 seconds apart, paused for 2 minutes and then half speed for an hour if the API ever says slow down. The line refuses new checks past 10 minutes of work, and each IP gets 5 fresh checks an hour.
 - Counts are cached in D1 per index and sentence, so a re-check (pages older than 30 days get one) only counts sentences that changed. The verdict logic is one pure function (`src/lib/plan.ts`) that both the Durable Object and the result page run.
-- `/health` says when each API last answered, and an hourly cron makes one canary call if nothing else has.
+- A miss can get a second look: three more of the page's sentences, by the same two-of-three rule, or the Wayback Machine's oldest copy of the page, in case it's been edited since.
+- A bare domain reads the site's sitemaps (from `robots.txt`, then `/sitemap.xml`), or its feed, and samples 4 posts spread across them. Each gets a quick look in Dolma and DCLM, through the same line as one ticket, at 2 site checks per IP a day.
+- For the crawls since July 2025, where there's no text to search, a second Durable Object (`Crawls`) asks Common Crawl's own URL index one crawl at a time, on request. New crawls turn up from its `collinfo.json` by themselves.
+- `/health` says when each API last answered, and an hourly cron makes one canary call if nothing else has. A weekly Action looks for new infini-gram indexes, and retries the broken OLMo 3 ones.
 
 </details>
 

@@ -144,6 +144,48 @@ describe('evaluate', () => {
   it('has nothing to do when every set is too new', () => {
     expect(evaluate({ spans, indexes: [] }, new Map()).next).toBeUndefined();
   });
+
+  it("doesn't go looking for documents on a domain sample's quick look", () => {
+    const known = counts([...screened(1, 2, 0), [c4, 'a', 1], [c4, 'b', 1]]);
+    expect(evaluate({ spans, indexes: [c4], quick: true }, known).next).toBeUndefined();
+  });
+});
+
+describe('a deeper look', () => {
+  const deep: Span[] = [...'abcdefghij'].map((hash) => ({ hash, text: `span ${hash}` }));
+  const plan = { spans: deep, indexes: [c4, pile], deeper: true };
+  const firstRound = counts([
+    ...[0, 1, 2].map((i): [string, string, number] => [SCREEN.index, deep[i].hash, 1]),
+    [c4, 'a', 0],
+    [c4, 'b', 0],
+    [pile, 'a', 2],
+    [pile, 'b', 1]
+  ]);
+
+  it('screens the next round of sentences once a set has missed', () => {
+    const { rows, next } = evaluate(plan, firstRound);
+    expect(next).toEqual({ kind: 'count', index: SCREEN.index, span: deep[5] });
+    expect(rows.map((row) => row.verdict)).toEqual(['pending', 'match']);
+  });
+
+  it('lets the second round decide a miss by the same two-of-three rule', () => {
+    const known = new Map([
+      ...firstRound,
+      ...[5, 6, 7].map((i): [string, number] => [key(SCREEN.index, deep[i].hash), 1]),
+      [key(c4, 'f'), 3],
+      [key(c4, 'g'), 2]
+    ]);
+    const { rows, second } = evaluate(plan, known);
+    expect(rows[0]).toMatchObject({ verdict: 'match', second: true });
+    expect(rows[1].second).toBeUndefined();
+    expect(second.map(({ hash }) => hash)).toEqual(['f', 'g', 'h']);
+  });
+
+  it('keeps the miss when there are no more sentences to try', () => {
+    const { rows, next } = evaluate({ ...plan, spans: deep.slice(0, 5) }, firstRound);
+    expect(rows[0].verdict).toBe('none');
+    expect(next).toBeUndefined();
+  });
 });
 
 describe('estimate', () => {
@@ -151,6 +193,12 @@ describe('estimate', () => {
     const everything = [...SETS.map((set) => set.index), SCREEN.index, 'v2_cc-2025-30'];
     expect(estimate({ spans, indexes: everything })).toBe(3 + 15 + 7);
     expect(estimate({ spans, indexes: [] })).toBe(0);
+  });
+
+  it('skips the documents on a quick look and doubles the counting for a deeper one', () => {
+    const quick = [SETS[3].index, SETS[4].index, SCREEN.index];
+    expect(estimate({ spans, indexes: quick, quick: true })).toBe(3 + 5);
+    expect(estimate({ spans, indexes: [c4], deeper: true })).toBe(11 + 2);
   });
 });
 

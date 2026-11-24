@@ -1,5 +1,5 @@
 import { SCREEN, byIndex } from '#lib/corpora.ts';
-import { PRIMARY } from '#lib/spans.ts';
+import { PRIMARY, ROUND } from '#lib/spans.ts';
 
 /** More matches than this in a whole month's crawl is stock text, not anybody's own writing */
 export const STOCK = 200;
@@ -24,12 +24,18 @@ export interface Row {
   index: string;
   verdict: Verdict;
   hits: Span[];
+  /** Set when the first round missed and a second round of sentences decided it */
+  second?: boolean;
   next?: Step;
 }
 
 export interface Plan {
   spans: Span[];
   indexes: string[];
+  /** No lists of matching documents, for a domain's quick look */
+  quick?: boolean;
+  /** Another round of sentences for every set the first round missed */
+  deeper?: boolean;
 }
 
 export const key = (index: string, hash: string) => `${index} ${hash}`;
@@ -84,10 +90,25 @@ export function docsStep(row: Row, fetched: ReadonlySet<string>): Step | undefin
 
 export interface Evaluation {
   active: Span[];
+  /** The second round's sentences, when there's been a deeper look */
+  second: Span[];
   screening: boolean;
   thin: boolean;
   rows: Row[];
   next?: Step;
+}
+
+/** The sets the first round missed, tried again with the next round of sentences */
+function deepen(rows: Row[], spans: Span[], counts: Counts) {
+  const missed = rows.filter((row) => row.verdict === 'none');
+  if (!missed.length) return { rows, second: [] };
+  const { active: second, next } = screen(spans.slice(ROUND), counts);
+  const retry = (row: Row): Row => {
+    if (row.verdict !== 'none') return row;
+    if (next) return { index: row.index, verdict: 'pending', hits: [], next };
+    return second.length < 2 ? row : { ...decide(row.index, second, counts), second: true };
+  };
+  return { rows: rows.map(retry), second };
 }
 
 /** Everything a lookup knows so far, and the one call that would tell it the most next */
@@ -96,31 +117,34 @@ export function evaluate(
   counts: Counts,
   fetched: ReadonlySet<string> = new Set()
 ): Evaluation {
-  const nothing: Evaluation = { active: [], screening: false, thin: false, rows: [] };
+  const nothing: Evaluation = { active: [], second: [], screening: false, thin: false, rows: [] };
   if (!plan.indexes.length) return nothing;
-  const screened = screen(plan.spans, counts);
+  const screened = screen(plan.spans.slice(0, ROUND), counts);
   if (screened.next) {
     const rows = plan.indexes.map((index): Row => ({ index, verdict: 'pending', hits: [] }));
     return { ...nothing, active: screened.active, screening: true, rows, next: screened.next };
   }
   const { active } = screened;
   if (active.length < 2) return { ...nothing, active, thin: true };
-  const rows = plan.indexes.map((index) => decide(index, active, counts));
-  const next =
-    rows.find((row) => row.next)?.next ??
-    rows.map((row) => docsStep(row, fetched)).find((step) => step);
-  return { ...nothing, active, rows, next };
+  const first = plan.indexes.map((index) => decide(index, active, counts));
+  const { rows, second } = plan.deeper
+    ? deepen(first, plan.spans, counts)
+    : { rows: first, second: [] };
+  const docs = plan.quick ? [] : rows.map((row) => docsStep(row, fetched));
+  const next = rows.find((row) => row.next)?.next ?? docs.find((step) => step);
+  return { ...nothing, active, second, rows, next };
 }
 
 const DOCS_CALLS = { urls: 2, slice: 1, part: 0 };
 
-/** A cautious guess at a plan's calls: the screen, two or three counts a set, every list of documents */
+/** A cautious guess at a plan's calls: each round's screen, two or three counts a set, every list of documents */
 export function estimate(plan: Plan) {
   if (!plan.indexes.length) return 0;
   const counted = plan.indexes.filter((index) => index !== SCREEN.index);
   const docs = counted.reduce((sum, index) => {
     const sources = byIndex(index)?.sources;
-    return sum + (sources ? DOCS_CALLS[sources] : 0);
+    return sum + (sources && !plan.quick ? DOCS_CALLS[sources] : 0);
   }, 0);
-  return Math.ceil(PRIMARY + 2.5 * counted.length + docs);
+  const rounds = plan.deeper ? 2 : 1;
+  return Math.ceil(rounds * (PRIMARY + 2.5 * counted.length) + docs);
 }

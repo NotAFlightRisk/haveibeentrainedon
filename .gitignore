@@ -53,5 +53,8 @@ desktop.ini
 iains-notes/
 /.impeccable/
 
+# Share images, drawn by scripts/og.ts at build
+/static/og/
+
 # Wrangler local secrets
 .dev.vars*

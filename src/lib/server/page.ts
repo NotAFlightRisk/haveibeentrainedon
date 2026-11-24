@@ -55,6 +55,32 @@ const isSkipped = (name: string, attribs: Record<string, string>) =>
   NOT_PROSE.has(attribs.role) ||
   NOT_OURS.test(`${attribs.class ?? ''} ${attribs.id ?? ''}`);
 
+const INVISIBLE = new Set(['script', 'style', 'noscript', 'template']);
+
+/** Everything a page shows, in one line, for checking a stored copy word for word */
+export function pageText(html: string) {
+  let text = '';
+  let hidden = 0;
+  const parser = new Parser(
+    {
+      onopentag(name) {
+        if (INVISIBLE.has(name)) hidden++;
+        if (BLOCKS.has(name) || name === 'br') text += ' ';
+      },
+      ontext(chunk) {
+        if (!hidden) text += chunk;
+      },
+      onclosetag(name) {
+        if (INVISIBLE.has(name)) hidden--;
+        if (BLOCKS.has(name)) text += ' ';
+      }
+    },
+    { decodeEntities: true, lowerCaseTags: true }
+  );
+  parser.end(html);
+  return text.replace(/\s+/g, ' ');
+}
+
 /** Reads a page once, keeping the prose its author wrote and the few facts we need about it */
 export function readPage(html: string): Page {
   const stack: Open[] = [];

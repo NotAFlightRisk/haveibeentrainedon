@@ -1,7 +1,10 @@
 import { env } from 'cloudflare:workers';
 import { CRAWLS, SCREEN, SETS, TIMELINE, type Corpus } from '#lib/corpora.ts';
 import { evaluate, key, STOCK, type Counts, type Row, type Span } from '#lib/plan.ts';
-import { PRIMARY } from '#lib/spans.ts';
+import { PRIMARY, ROUND } from '#lib/spans.ts';
+import { unwrap } from '#lib/wayback.ts';
+import { loadCaptures, type Capture } from './captures.ts';
+import { bare } from './fetcher.ts';
 import type { Place } from './gate.ts';
 import type { Doc } from './infinigram.ts';
 import { finishLookup, loadCounts, loadDocs, lookupById, type Lookup } from './store.ts';
@@ -30,6 +33,8 @@ export interface Cell {
   card: string;
   verdict: CellVerdict;
   counts: (number | null)[];
+  /** Decided by the second round of sentences, after the first missed */
+  second?: boolean;
   where?: Where;
 }
 
@@ -43,18 +48,22 @@ export interface Result {
   checkedAt: number;
   done: boolean;
   spans: Span[];
+  /** The second round's sentences, once a deeper look has picked them */
+  second: Span[];
+  /** Whether there are sentences left for a deeper look nobody's asked for yet */
+  more: boolean;
   stock: number[];
   thin: boolean;
   sets: Cell[];
   crawls: Cell[];
+  /** What Common Crawl's own index says about the page since July 2025, once somebody asks */
+  captures: Capture[];
   place: Place | null;
 }
 
-const bare = (host: string) => host.toLowerCase().replace(/^www\./, '');
-
 function hostOf(url: string) {
   try {
-    return bare(new URL(url).hostname);
+    return bare(new URL(unwrap(url)?.original ?? url).hostname);
   } catch {
     return undefined;
   }
@@ -86,6 +95,7 @@ function where(
   corpus: Corpus,
   row: Row,
   docs: Map<string, Doc[]>,
+  quick: boolean,
   pageHost?: string
 ): Where | undefined {
   if (row.verdict !== 'match' || !corpus.sources) return;
@@ -93,6 +103,7 @@ function where(
   const wanted = row.hits.slice(0, corpus.sources === 'slice' ? 1 : 2);
   const lists = wanted.map(({ hash }) => docs.get(key(corpus.index, hash)));
   const ready = lists.every(Boolean);
+  if (!ready && quick) return;
   if (corpus.sources === 'slice') {
     const parts = [...new Set(lists.flat().flatMap((doc) => (doc?.part ? [doc.part] : [])))];
     return { kind: 'slice', ready, parts };
@@ -106,22 +117,26 @@ interface Known {
   lookup: Lookup;
   rows: Row[];
   active: Span[];
+  second: Span[];
   counts: Counts;
   docs: Map<string, Doc[]>;
   done: boolean;
 }
 
-function cell(corpus: Corpus, { lookup, rows, active, counts, docs, done }: Known): Cell {
+function cell(corpus: Corpus, known: Known): Cell {
+  const { lookup, rows, counts, docs, done } = known;
   const { id, name, snapshot, models, note, card } = corpus;
   const base = { id, name, snapshot, models, note, card };
-  const shown = active.map(({ hash }) => counts.get(key(corpus.index, hash)) ?? null);
   const row = rows.find((candidate) => candidate.index === corpus.index);
+  const spans = row?.second ? known.second : known.active;
+  const shown = spans.map(({ hash }) => counts.get(key(corpus.index, hash)) ?? null);
   if (!row && lookup.skipped.includes(corpus.index)) return { ...base, verdict: 'new', counts: [] };
   if (!row) return { ...base, verdict: 'pending', counts: shown };
   const verdict =
     row.verdict === 'failed' || (row.verdict === 'pending' && done) ? 'failed' : row.verdict;
   const pageHost = lookup.url ? hostOf(lookup.url) : undefined;
-  return { ...base, verdict, counts: shown, where: where(corpus, row, docs, pageHost) };
+  const matched = where(corpus, row, docs, lookup.quick, pageHost);
+  return { ...base, verdict, counts: shown, second: row.second, where: matched };
 }
 
 /** Everything the result page and its JSON show, worked out from what's been counted so far */
@@ -129,9 +144,14 @@ export async function loadResult(id: string): Promise<Result | null> {
   const lookup = await lookupById(id);
   if (!lookup) return null;
   const hashes = lookup.spans.map(({ hash }) => hash);
-  const [counts, docs] = await Promise.all([loadCounts(hashes), loadDocs(hashes)]);
-  const plan = { spans: lookup.spans, indexes: lookup.indexes };
-  const { active, screening, thin, rows } = evaluate(plan, counts, new Set(docs.keys()));
+  const [counts, docs, captures] = await Promise.all([
+    loadCounts(hashes),
+    loadDocs(hashes),
+    lookup.url ? loadCaptures(unwrap(lookup.url)?.original ?? lookup.url) : []
+  ]);
+  const { spans, indexes, quick, deeper } = lookup;
+  const plan = { spans, indexes, quick, deeper };
+  const { active, second, screening, thin, rows } = evaluate(plan, counts, new Set(docs.keys()));
   const place = lookup.status === 'done' ? null : await env.GATE.getByName('line').place(id);
   // a check the line has lost (it gave up on it, say) is as done as it's ever going to be
   const lost = lookup.status === 'queued' && !place && Date.now() - lookup.checkedAt > LOST_MS;
@@ -140,7 +160,8 @@ export async function loadResult(id: string): Promise<Result | null> {
   const stock = lookup.spans
     .map(({ hash }) => counts.get(key(SCREEN.index, hash)) ?? 0)
     .filter((count) => count > STOCK);
-  const toCell = (corpus: Corpus) => cell(corpus, { lookup, rows, active, counts, docs, done });
+  const known = { lookup, rows, active, second, counts, docs, done };
+  const toCell = (corpus: Corpus) => cell(corpus, known);
   const asked = new Set([...lookup.indexes, ...lookup.skipped]);
   return {
     id: lookup.id,
@@ -152,12 +173,15 @@ export async function loadResult(id: string): Promise<Result | null> {
     checkedAt: lookup.checkedAt,
     done,
     spans: screening || !active.length ? lookup.spans.slice(0, PRIMARY) : active,
+    second,
+    more: lookup.kind === 'url' && !deeper && spans.slice(ROUND).length >= 2,
     stock,
     thin: thin || lookup.spans.length < 2,
     sets: SETS.map(toCell),
     crawls: CRAWLS.filter((crawl) => TIMELINE.includes(crawl) || asked.has(crawl.index)).map(
       toCell
     ),
+    captures,
     place
   };
 }

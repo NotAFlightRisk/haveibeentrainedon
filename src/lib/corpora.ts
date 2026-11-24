@@ -100,5 +100,7 @@ export const [SCREEN] = CRAWLS;
 export const TIMELINE = [CRAWLS[0], CRAWLS[6]];
 export const BETWEEN = CRAWLS.slice(1, 6);
 export const ALL = [...SETS, ...CRAWLS];
+// a domain's sample gets the two sets that kept most small blogs, plus the screen it needs anyway
+export const QUICK = [SETS[3], SETS[4], SCREEN];
 
 export const byIndex = (index: string) => ALL.find((corpus) => corpus.index === index);

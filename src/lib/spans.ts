@@ -5,6 +5,8 @@ const SENTENCE_END = /(?<=[.!?])["'”’)]?\s+(?=["'“‘(]?[A-Z])/;
 const MAX_SPAN = 130;
 export const PRIMARY = 3;
 export const SPARES = 2;
+/** How many candidates each round of sentences can pick from */
+export const ROUND = PRIMARY + SPARES;
 
 const tidy = (text: string) => text.replace(/\s+/g, ' ').trim();
 
@@ -31,22 +33,28 @@ export function toSpan(sentence: string) {
   return text.split(' ').slice(1).join(' ');
 }
 
-const spread = (items: string[], count: number) => {
+/** `count` items picked evenly through the list, each from the middle of its stretch */
+export function spread<T>(items: T[], count: number) {
   if (items.length <= count) return items;
   const step = items.length / count;
   return Array.from({ length: count }, (_, i) => items[Math.floor(step * i + step / 2)]);
-};
+}
 
-/** Three spans spread through the text, then a couple of spares in case one turns out to be stock */
+/** Three spans spread through the text and two spares, then the same again for a deeper look */
 export function pickSpans(paragraphs: string[]) {
-  const all = sentences(paragraphs);
-  const primary = spread(all, PRIMARY);
-  const spares = spread(
-    all.filter((sentence) => !primary.includes(sentence)),
-    SPARES
+  const spans = [...new Set(sentences(paragraphs).map(toSpan))].filter(
+    (span) => span.split(' ').length >= 10
   );
-  const picks = [...primary, ...spares].map(toSpan);
-  return [...new Set(picks)].filter((span) => span.split(' ').length >= 10);
+  const picked: string[] = [];
+  for (const count of [PRIMARY, SPARES, PRIMARY, SPARES]) {
+    picked.push(
+      ...spread(
+        spans.filter((span) => !picked.includes(span)),
+        count
+      )
+    );
+  }
+  return picked;
 }
 
 /** Pasted text's spans, picked the same way in the browser and on the server */

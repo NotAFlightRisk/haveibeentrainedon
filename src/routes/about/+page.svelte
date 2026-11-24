@@ -30,7 +30,8 @@
     <p>
       A sentence counts if it's 70 to 220 characters and at least 12 words, with no brackets, code
       or links. It takes three spread through the page, cuts each to 130 characters at a word, and
-      drops the first word, as the indexes miss a phrase that starts a paragraph.
+      drops the first word, as the indexes miss a phrase that starts a paragraph. It keeps a couple
+      of spares, and a second three for a deeper look if you ask for one.
     </p>
   </section>
 
@@ -51,6 +52,22 @@
       A page with a full publish date in its metadata (<code>datePublished</code> or
       <code>article:published_time</code>) is marked too new for any set that stopped before it,
       without asking. A page with no date, or only a year, just gets checked.
+    </p>
+    <p>
+      When a set misses, you can try three more of the page's sentences on it, judged by the same
+      two-out-of-three rule. Or check the Wayback Machine's copy of the page from around when that
+      set was made, in case you've edited it since.
+    </p>
+  </section>
+
+  <section>
+    <h2>Checking a whole site</h2>
+    <p>
+      Put in just a domain and it reads the site's sitemaps (the ones its <code>robots.txt</code>
+      names, then <code>/sitemap.xml</code>), or its feed if there's no sitemap, and picks 4 posts
+      spread across what's listed. Each gets a quick look in Dolma and DCLM, the two sets that kept
+      the most small blogs. It's a sample of posts we could find, not a verdict on the site, and you
+      can swap a post that isn't really writing twice.
     </p>
   </section>
 
@@ -73,7 +90,9 @@
           The raw monthly crawls from January to July 2025, via
           <a href="https://infini-gram-mini.io/">infini-gram mini</a>. Each result shows January and
           July. They didn't train any one model, but most web training sets are cut from crawls like
-          these, FineWeb included.
+          these, FineWeb included. For the crawls since, it asks
+          <a href="https://index.commoncrawl.org/">Common Crawl's own index</a> whether its bot fetched
+          the page, which says nothing about training and can't search the text itself.
         </dd>
       </div>
     </dl>
@@ -95,9 +114,9 @@
     <p>
       infini-gram is a free research API, so every search waits in one line, one call every 2
       seconds. That's about 100 fresh checks an hour. When the line's more than 10 minutes long, new
-      checks get turned away with a time to come back. Each person gets 5 fresh checks an hour.
-      Results are kept, so a page someone's already checked loads straight away, and it's checked
-      again after 30 days.
+      checks get turned away with a time to come back. Each person gets 5 fresh checks an hour, and
+      2 site checks a day. Results are kept, so a page someone's already checked loads straight
+      away, and it's checked again after 30 days.
     </p>
   </section>
 
@@ -105,8 +124,9 @@
     <h2>What gets kept</h2>
     <p>
       The page's address, title and publish date, the sentences it searched and their counts. Pasted
-      text isn't kept at all, just fingerprints of its three sentences and their counts. Your IP
-      address is only used, scrambled, to count your checks for the hour. Result pages have
+      text isn't kept at all, just fingerprints of its sentences and their counts. A site check
+      keeps the list of posts it found, and the crawl check keeps what Common Crawl's index said.
+      Your IP address is only used, scrambled, to count your checks for the hour. Result pages have
       addresses nobody can guess, and they aren't listed or indexed anywhere. Each one has a JSON
       copy at <code>/api/result/&lt;id&gt;</code>.
     </p>

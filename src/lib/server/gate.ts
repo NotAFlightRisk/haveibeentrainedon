@@ -13,24 +13,32 @@ const RETRY_MS = 30_000;
 // a call can take this long, so nothing else may start until it's back
 const CALL_MS = 30_000;
 const GIVE_UP_MS = 30 * MINUTE;
+const DAY = 24 * 60 * MINUTE;
 const TRIES = 3;
-const LIMITS = { url: { most: 5, per: 60 * MINUTE } };
 const CANARY = 'what goes on the internet stays on the internet';
 const CANARIES: Record<Api, string> = { v4: SETS[0].index, mini: SCREEN.index };
 
-export type Kind = keyof typeof LIMITS;
+export type Kind = 'url' | 'domain' | 'swap';
+// a swap is part of a domain check that's already been counted against its day
+const LIMITS: Partial<Record<Kind, { most: number; per: number }>> = {
+  url: { most: 5, per: 60 * MINUTE },
+  domain: { most: 2, per: DAY }
+};
 
-export interface Ticket {
+export interface Check {
   id: string;
   plan: Plan;
   cost: number;
-  kind: Kind;
-  who: string;
 }
 
-export type Admission =
-  | { ok: true; ahead: number; wait: number }
-  | { ok: false; reason: 'busy' | 'limited'; retryAt: number };
+/** Everything one person asked for at once, let in or turned away together */
+export interface Ticket {
+  kind: Kind;
+  who: string;
+  checks: Check[];
+}
+
+export type Admission = { ok: true } | { ok: false; reason: 'busy' | 'limited'; retryAt: number };
 
 export interface Place {
   ahead: number;
@@ -117,55 +125,70 @@ export class Gate extends DurableObject {
     return btoa(String.fromCharCode(...new Uint8Array(digest).slice(0, 12)));
   }
 
-  /** Folds a second ask for a check that's already waiting into its plan, rather than losing it */
-  private widen(id: string, plan: Plan) {
-    const job = this.jobs().find((waiting) => waiting.id === id);
-    if (!job) return;
+  /** A waiting job with a wider ask folded in, on the newest sentences, and what it adds */
+  private widened(job: Job, { id, plan }: Check): Check & { added: number } {
     const current = JSON.parse(job.plan) as Plan;
-    const indexes = [...new Set([...current.indexes, ...plan.indexes])];
-    if (indexes.length === current.indexes.length) return;
-    const widened = { ...current, indexes };
-    this.sql.exec(
-      'update line set plan = ?, cost = ? where seq = ?',
-      JSON.stringify(widened),
-      Math.max(estimate(widened), job.calls + 1),
-      job.seq
-    );
+    const wider: Plan = {
+      spans: plan.spans,
+      indexes: [...new Set([...current.indexes, ...plan.indexes])],
+      quick: Boolean(current.quick && plan.quick),
+      deeper: Boolean(current.deeper || plan.deeper)
+    };
+    const cost = Math.max(estimate(wider), job.calls + 1);
+    return { id, plan: wider, cost, added: cost - job.cost };
   }
 
-  async admit(ticket: Ticket): Promise<Admission> {
-    this.widen(ticket.id, ticket.plan);
-    const waiting = await this.place(ticket.id);
-    if (waiting) return { ok: true, ahead: waiting.ahead, wait: waiting.wait };
-    const now = Date.now();
-    const limit = LIMITS[ticket.kind];
-    const who = await this.who(ticket.who);
-    this.sql.exec('delete from seen where at < ?', now - 24 * 60 * MINUTE);
+  /** When this address may ask again, if it's had its share of this kind of check */
+  private limited(address: string, kind: Kind, now: number) {
+    const limit = LIMITS[kind];
+    if (!limit) return;
     const recent = this.sql
       .exec<{ at: number }>(
         'select at from seen where who = ? and kind = ? and at > ? order by at',
-        who,
-        ticket.kind,
+        address,
+        kind,
         now - limit.per
       )
       .toArray();
-    if (recent.length >= limit.most) {
-      return { ok: false, reason: 'limited', retryAt: recent[0].at + limit.per };
+    return recent.length >= limit.most ? recent[0].at + limit.per : undefined;
+  }
+
+  /** Lets a whole ticket in or none of it, and a wider ask for a waiting check counts as a fresh one */
+  async admit({ kind, who, checks }: Ticket): Promise<Admission> {
+    const jobs = this.jobs();
+    const changes = checks.map((check) => {
+      const job = jobs.find((waiting) => waiting.id === check.id);
+      const seq: number | undefined = job?.seq;
+      return job ? { ...this.widened(job, check), seq } : { ...check, added: check.cost, seq };
+    });
+    const extra = changes.reduce((sum, change) => sum + Math.max(change.added, 0), 0);
+    const now = Date.now();
+    const address = await this.who(who);
+    this.sql.exec('delete from seen where at < ?', now - DAY);
+    if (extra > 0) {
+      const retryAt = this.limited(address, kind, now);
+      if (retryAt) return { ok: false, reason: 'limited', retryAt };
+      const queued = jobs.reduce((sum, job) => sum + this.remaining(job), 0);
+      const over = (queued + extra) * this.interval(now) - LINE_MS;
+      if (over > 0) return { ok: false, reason: 'busy', retryAt: now + over };
+      this.sql.exec('insert into seen (who, kind, at) values (?, ?, ?)', address, kind, now);
     }
-    const queued = this.jobs().reduce((sum, job) => sum + this.remaining(job), 0);
-    const interval = this.interval(now);
-    const over = (queued + ticket.cost) * interval - LINE_MS;
-    if (over > 0) return { ok: false, reason: 'busy', retryAt: now + over };
-    this.sql.exec('insert into seen (who, kind, at) values (?, ?, ?)', who, ticket.kind, now);
-    this.sql.exec(
-      'insert into line (id, plan, cost, added) values (?, ?, ?, ?)',
-      ticket.id,
-      JSON.stringify(ticket.plan),
-      ticket.cost,
-      now
-    );
+    for (const { id, plan, cost, seq } of changes) {
+      const saved = JSON.stringify(plan);
+      if (seq === undefined) {
+        this.sql.exec(
+          'insert into line (id, plan, cost, added) values (?, ?, ?, ?)',
+          id,
+          saved,
+          cost,
+          now
+        );
+      } else {
+        this.sql.exec('update line set plan = ?, cost = ? where seq = ?', saved, cost, seq);
+      }
+    }
     await this.wake();
-    return { ok: true, ahead: queued, wait: queued * interval };
+    return { ok: true };
   }
 
   async place(id: string): Promise<Place | null> {
@@ -222,6 +245,7 @@ export class Gate extends DurableObject {
         if (Date.now() - job.added < GIVE_UP_MS) {
           return this.ctx.storage.setAlarm(Date.now() + RETRY_MS);
         }
+        await finishLookup(job.id).catch((failed: unknown) => report(failed, undefined, 'gate'));
       }
       if (!step) {
         this.sql.exec('delete from line where seq = ?', job.seq);

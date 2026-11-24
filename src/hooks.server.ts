@@ -2,7 +2,7 @@ import type { Handle, HandleServerError } from '@sveltejs/kit/hooks';
 import { report } from '#lib/server/report.ts';
 
 // result pages are unlisted, so search engines get told to leave them be
-const UNLISTED = /^\/(r|api)\//;
+const UNLISTED = /^\/(r|d|api)\//;
 // what _headers gives the static files, for everything the Worker renders
 const HEADERS = {
   'strict-transport-security': 'max-age=31536000',

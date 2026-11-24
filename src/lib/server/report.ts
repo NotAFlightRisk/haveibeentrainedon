@@ -32,7 +32,12 @@ const QUIET = 60 * 60_000;
 const sent = new Map<string, number>();
 
 /** Sends one error straight to Bugsink, as the Sentry SDK would nearly double the Worker */
-export async function report(error: unknown, request?: Request, where = 'server') {
+export async function report(
+  error: unknown,
+  request?: Request,
+  where = 'server',
+  level: 'error' | 'warning' = 'error'
+) {
   console.error(where, error);
   const key = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   const dsn = env.SENTRY_DSN;
@@ -41,7 +46,7 @@ export async function report(error: unknown, request?: Request, where = 'server'
   const { origin, pathname, username } = new URL(dsn);
   const body = {
     platform: 'javascript',
-    level: 'error',
+    level,
     tags: { runtime: where },
     request: request && {
       url: request.url,

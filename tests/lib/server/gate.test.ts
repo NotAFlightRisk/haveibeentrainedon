@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SETS } from '#lib/corpora.ts';
-import { Gate, type Ticket } from '#lib/server/gate.ts';
+import { Gate, type Kind, type Ticket } from '#lib/server/gate.ts';
 import { count } from '#lib/server/infinigram.ts';
 import { loadCounts } from '#lib/server/store.ts';
 
@@ -42,13 +42,18 @@ function fakeState() {
 }
 
 const spans = ['a', 'b', 'c'].map((hash) => ({ hash, text: `span ${hash}` }));
-const ticket = (id: string, who = '1.2.3.4'): Ticket => ({
-  id,
-  plan: { spans, indexes: [SETS[0].index] },
-  cost: 20,
-  kind: 'url',
-  who
-});
+interface Options {
+  who?: string;
+  cost?: number;
+  indexes?: string[];
+  kind?: Kind;
+}
+
+const ticket = (ids: string | string[], options: Options = {}): Ticket => {
+  const { who = '1.2.3.4', cost = 20, indexes = [SETS[0].index], kind = 'url' } = options;
+  const checks = [ids].flat().map((id) => ({ id, plan: { spans, indexes }, cost }));
+  return { kind, who, checks };
+};
 
 describe('Gate', () => {
   let state: ReturnType<typeof fakeState>;
@@ -64,14 +69,14 @@ describe('Gate', () => {
   afterEach(() => vi.useRealTimers());
 
   it('takes a check, wakes itself and says nobody is ahead', async () => {
-    expect(await gate.admit(ticket('one'))).toEqual({ ok: true, ahead: 0, wait: 0 });
+    expect(await gate.admit(ticket('one'))).toEqual({ ok: true });
     expect(state.alarm).toBe(Date.now());
   });
 
   it("doesn't reset a check that's already in the line", async () => {
     await gate.admit(ticket('one'));
     await gate.alarm();
-    const again = await gate.admit({ ...ticket('one'), plan: { spans: [], indexes: [] } });
+    const again = await gate.admit(ticket('one', { indexes: [] }));
     expect(again.ok).toBe(true);
     expect((await gate.place('one'))?.ahead).toBe(0);
     expect(state.storage.sql.exec('select calls from line').toArray()).toEqual([{ calls: 1 }]);
@@ -79,21 +84,65 @@ describe('Gate', () => {
 
   it('folds a wider ask for a waiting check into its plan instead of dropping it', async () => {
     await gate.admit(ticket('one'));
-    const wider = { ...ticket('one'), plan: { spans, indexes: [SETS[0].index, SETS[1].index] } };
+    const wider = ticket('one', { indexes: [SETS[0].index, SETS[1].index] });
     expect((await gate.admit(wider)).ok).toBe(true);
     const [job] = state.storage.sql.exec('select plan from line').toArray() as { plan: string }[];
     expect(JSON.parse(job.plan).indexes).toEqual([SETS[0].index, SETS[1].index]);
   });
 
+  it('charges a wider ask for a waiting check like a fresh one, and changes nothing if refused', async () => {
+    for (const id of ['a', 'b', 'c', 'd', 'e']) await gate.admit(ticket(id, { cost: 1 }));
+    const wider = ticket('a', { indexes: [SETS[0].index, SETS[1].index] });
+    expect(await gate.admit(wider)).toMatchObject({ ok: false, reason: 'limited' });
+    const [job] = state.storage.sql.exec("select plan from line where id = 'a'").toArray() as {
+      plan: string;
+    }[];
+    expect(JSON.parse(job.plan).indexes).toEqual([SETS[0].index]);
+  });
+
+  it('counts the newest sentences when a re-read page widens a waiting check', async () => {
+    await gate.admit(ticket('one'));
+    const edited = [{ hash: 'z', text: 'span z' }];
+    const wider = ticket('one', { indexes: [SETS[1].index] });
+    wider.checks[0].plan.spans = edited;
+    await gate.admit(wider);
+    const [job] = state.storage.sql.exec('select plan from line').toArray() as { plan: string }[];
+    expect(JSON.parse(job.plan).spans).toEqual(edited);
+  });
+
   it('turns away the sixth fresh check from one address in an hour', async () => {
-    for (const id of ['a', 'b', 'c', 'd', 'e']) await gate.admit({ ...ticket(id), cost: 1 });
-    const sixth = await gate.admit({ ...ticket('f'), cost: 1 });
+    for (const id of ['a', 'b', 'c', 'd', 'e']) await gate.admit(ticket(id, { cost: 1 }));
+    const sixth = await gate.admit(ticket('f', { cost: 1 }));
     expect(sixth).toMatchObject({ ok: false, reason: 'limited' });
-    expect((await gate.admit({ ...ticket('g', '5.6.7.8'), cost: 1 })).ok).toBe(true);
+    expect((await gate.admit(ticket('g', { who: '5.6.7.8', cost: 1 }))).ok).toBe(true);
+  });
+
+  it("lets a domain's posts in together, two samples a day, apart from page checks", async () => {
+    const sample = (n: number) =>
+      ticket(
+        [1, 2, 3, 4].map((post) => `${n}-${post}`),
+        {
+          kind: 'domain',
+          cost: 8
+        }
+      );
+    expect((await gate.admit(sample(1))).ok).toBe(true);
+    expect(state.storage.sql.exec('select id from line').toArray()).toHaveLength(4);
+    expect((await gate.admit(sample(2))).ok).toBe(true);
+    vi.advanceTimersByTime(23 * 60 * 60_000);
+    expect(await gate.admit(sample(3))).toMatchObject({ ok: false, reason: 'limited' });
+    expect((await gate.admit(ticket('page', { cost: 1 }))).ok).toBe(true);
+  });
+
+  it("turns a whole sample away when the line can't take all of its posts", async () => {
+    await gate.admit(ticket('big', { who: '9.9.9.9', cost: 290 }));
+    const refused = await gate.admit(ticket(['a', 'b'], { kind: 'domain', cost: 8 }));
+    expect(refused).toMatchObject({ ok: false, reason: 'busy' });
+    expect(await gate.place('a')).toBeNull();
   });
 
   it('turns everyone away once the line holds ten minutes of calls', async () => {
-    await gate.admit({ ...ticket('big', '9.9.9.9'), cost: 290 });
+    await gate.admit(ticket('big', { who: '9.9.9.9', cost: 290 }));
     const refused = await gate.admit(ticket('late'));
     expect(refused).toMatchObject({ ok: false, reason: 'busy' });
     if (!refused.ok) expect(refused.retryAt).toBe(Date.now() + (290 + 20) * 2_000 - 600_000);

@@ -89,7 +89,7 @@ describe('fetchPage', () => {
     );
     const page = await fetchPage('https://a.example.com/');
     expect(page.url.href).toBe('https://b.example.com/post');
-    expect(page.html).toBe('<p>hello</p>');
+    expect(page.body).toBe('<p>hello</p>');
   });
 
   it('refuses a redirect that lands on a private address', async () => {

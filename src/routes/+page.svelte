@@ -36,6 +36,7 @@
     value={form?.url ?? data.prefill}
     force={data.force}
     between={data.between}
+    deeper={data.deeper}
     error={fetchFailed ? `${form?.error} You can paste its text below instead.` : form?.error}
   />
   <details class="paste" open={fetchFailed || !!form?.pasteError}>
@@ -44,7 +45,8 @@
   </details>
   <p class="fine">
     A fresh check takes about 40 seconds. Three sentences from the page go to
-    <a href="https://infini-gram.io/">infini-gram</a>'s search at the University of Washington.
+    <a href="https://infini-gram.io/">infini-gram</a>'s search at the University of Washington. Put
+    in just a domain and it'll check a sample of 4 posts from the site.
   </p>
 </Band>
 

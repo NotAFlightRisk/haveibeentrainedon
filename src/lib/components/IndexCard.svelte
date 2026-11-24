@@ -17,6 +17,13 @@
   {#if cell.note && cell.verdict === 'none'}
     <p class="models">{cell.note}</p>
   {/if}
+  {#if cell.second && cell.verdict !== 'pending'}
+    <p class="models">
+      {cell.verdict === 'match'
+        ? 'The first three sentences missed, but the next three matched.'
+        : 'The next three sentences missed too.'}
+    </p>
+  {/if}
   {#if counted.length}
     <p class="tally">
       <span>Copies per sentence</span>

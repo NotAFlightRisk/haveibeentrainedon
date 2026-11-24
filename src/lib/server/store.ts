@@ -12,6 +12,10 @@ export interface Lookup {
   spans: Span[];
   indexes: string[];
   skipped: string[];
+  /** A domain sample's look: the screen, Dolma and DCLM, with no lists of matching documents */
+  quick: boolean;
+  /** Asked for a second round of sentences wherever the first missed */
+  deeper: boolean;
   picker: number;
   status: 'queued' | 'done';
   checkedAt: number;
@@ -20,21 +24,27 @@ export interface Lookup {
   rev: string;
 }
 
-interface LookupRow extends Omit<Lookup, 'spans' | 'indexes' | 'skipped' | 'checkedAt' | 'doneAt'> {
+type Stored = 'spans' | 'indexes' | 'skipped' | 'quick' | 'deeper' | 'checkedAt' | 'doneAt';
+
+interface LookupRow extends Omit<Lookup, Stored> {
   spans: string;
   indexes: string;
   skipped: string;
+  quick: number;
+  deeper: number;
   checked_at: number;
   done_at: number | null;
 }
 
-const fromRow = (row: LookupRow): Lookup => ({
+const fromRow = ({ checked_at, done_at, ...row }: LookupRow): Lookup => ({
   ...row,
   spans: JSON.parse(row.spans),
   indexes: JSON.parse(row.indexes),
   skipped: JSON.parse(row.skipped),
-  checkedAt: row.checked_at,
-  doneAt: row.done_at
+  quick: !!row.quick,
+  deeper: !!row.deeper,
+  checkedAt: checked_at,
+  doneAt: done_at
 });
 
 const one = async (where: string, value: string) => {
@@ -55,6 +65,8 @@ const FIELDS = [
   'spans',
   'indexes',
   'skipped',
+  'quick',
+  'deeper',
   'picker',
   'status',
   'checked_at',
@@ -76,6 +88,8 @@ function fields(lookup: Lookup) {
     JSON.stringify(spans),
     JSON.stringify(lookup.indexes),
     JSON.stringify(lookup.skipped),
+    Number(lookup.quick),
+    Number(lookup.deeper),
     lookup.picker,
     lookup.status,
     lookup.checkedAt,
@@ -154,5 +168,92 @@ export async function saveDocs(index: string, hash: string, docs: Doc[]) {
      on conflict do update set docs = excluded.docs, fetched_at = excluded.fetched_at`
   )
     .bind(index, hash, JSON.stringify(docs), Date.now())
+    .run();
+}
+
+export interface Picked {
+  url: string;
+  lookup: string;
+}
+
+export interface Domain {
+  id: string;
+  host: string;
+  /** Every post we found, oldest first when the site dates them */
+  posts: string[];
+  picked: Picked[];
+  /** Posts we've already fetched for this sample, used or not */
+  tried: string[];
+  swaps: number;
+  picker: number;
+  checkedAt: number;
+}
+
+interface DomainRow extends Omit<Domain, 'posts' | 'picked' | 'tried' | 'checkedAt'> {
+  posts: string;
+  picked: string;
+  tried: string;
+  checked_at: number;
+}
+
+async function domain(where: string, value: string): Promise<Domain | null> {
+  const row = await env.DB.prepare(`select * from domains where ${where} = ?`)
+    .bind(value)
+    .first<DomainRow>();
+  if (!row) return null;
+  const { checked_at, ...rest } = row;
+  return {
+    ...rest,
+    posts: JSON.parse(row.posts),
+    picked: JSON.parse(row.picked),
+    tried: JSON.parse(row.tried),
+    checkedAt: checked_at
+  };
+}
+
+export const domainById = (id: string) => domain('id', id);
+export const domainByHost = (host: string) => domain('host', host);
+
+export async function saveDomain(found: Domain) {
+  const values = [
+    found.id,
+    found.host,
+    JSON.stringify(found.posts),
+    JSON.stringify(found.picked),
+    JSON.stringify(found.tried),
+    found.swaps,
+    found.picker,
+    found.checkedAt
+  ];
+  await env.DB.prepare(
+    `insert into domains (id, host, posts, picked, tried, swaps, picker, checked_at)
+     values (${marks(values)})
+     on conflict (id) do update set posts = excluded.posts, picked = excluded.picked,
+       tried = excluded.tried, swaps = excluded.swaps, picker = excluded.picker,
+       checked_at = excluded.checked_at`
+  )
+    .bind(...values)
+    .run();
+}
+
+/** Takes one of a sample's swaps, unless they've all gone */
+export async function claimSwap(id: string, most: number) {
+  const claimed = await env.DB.prepare(
+    'update domains set swaps = swaps + 1 where id = ? and swaps < ? returning swaps'
+  )
+    .bind(id, most)
+    .first();
+  return claimed !== null;
+}
+
+export async function releaseSwap(id: string) {
+  await env.DB.prepare('update domains set swaps = swaps - 1 where id = ? and swaps > 0')
+    .bind(id)
+    .run();
+}
+
+export async function savePicked(id: string, picked: Picked[], tried: string[]) {
+  await env.DB.prepare('update domains set picked = ?, tried = ? where id = ?')
+    .bind(JSON.stringify(picked), JSON.stringify(tried), id)
     .run();
 }

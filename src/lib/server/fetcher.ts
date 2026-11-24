@@ -5,6 +5,9 @@ const TIMEOUT_MS = 10_000;
 const HOSTNAME = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
 const PRIVATE_SUFFIX = /\.(local|localhost|internal|intranet|lan|home|corp|arpa|test|invalid)$/i;
 
+/** A host without its www, so the two count as one site */
+export const bare = (host: string) => host.toLowerCase().replace(/^www\./, '');
+
 export class FetchError extends Error {
   constructor(
     readonly reason: 'address' | 'unreachable' | 'refused' | 'not-html' | 'too-big' | 'timeout',
@@ -120,8 +123,18 @@ async function readCapped(response: Response) {
   }
 }
 
-/** Fetches one public HTML page, checking every hop of every redirect on the way */
-export async function fetchPage(input: string) {
+const KINDS = {
+  html: { accept: 'text/html,application/xhtml+xml', type: /text\/html|application\/xhtml/i },
+  xml: {
+    accept: 'application/xml,text/xml,application/rss+xml,application/atom+xml',
+    type: /xml/i
+  },
+  text: { accept: 'text/plain', type: /text\/plain/i }
+};
+
+/** Fetches one public page, HTML unless told otherwise, checking every hop of every redirect */
+export async function fetchPage(input: string | URL, kind: keyof typeof KINDS = 'html') {
+  const { accept, type } = KINDS[kind];
   const deadline = AbortSignal.timeout(TIMEOUT_MS);
   let url = checkAddress(input);
   try {
@@ -130,7 +143,7 @@ export async function fetchPage(input: string) {
       const response = await fetch(url, {
         redirect: 'manual',
         signal: deadline,
-        headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml' }
+        headers: { 'user-agent': USER_AGENT, accept }
       });
       const location = response.headers.get('location');
       if (response.status >= 300 && response.status < 400 && location) {
@@ -145,11 +158,11 @@ export async function fetchPage(input: string) {
           `That site wouldn't hand the page over (it answered ${response.status}).`
         );
       }
-      if (!/text\/html|application\/xhtml/i.test(response.headers.get('content-type') ?? '')) {
+      if (!type.test(response.headers.get('content-type') ?? '')) {
         await response.body?.cancel();
         throw new FetchError('not-html', "That isn't a web page we can read.");
       }
-      return { url, html: await readCapped(response) };
+      return { url, body: await readCapped(response) };
     }
   } catch (error) {
     if (error instanceof FetchError) throw error;

@@ -1,10 +1,13 @@
 <script lang="ts">
   import { day, number, plural } from '#lib/format.ts';
   import type { Result } from '#lib/server/result.ts';
+  import { unwrap } from '#lib/wayback.ts';
 
   let { result }: { result: Result } = $props();
 
   const shown = $derived(result.spans.filter((span) => span.text));
+  const second = $derived(result.second.filter((span) => span.text));
+  const archive = $derived(result.url ? unwrap(result.url) : undefined);
 </script>
 
 <section class="slip" aria-labelledby="slip-heading">
@@ -14,6 +17,15 @@
       <div>
         <dt>Page</dt>
         <dd><a href={result.url} rel="noopener nofollow">{result.title || result.url}</a></dd>
+      </div>
+    {/if}
+    {#if archive}
+      <div>
+        <dt>Copy from</dt>
+        <dd>
+          <span class="mono">{day(archive.day)}</span>, kept by the
+          <a href="https://web.archive.org/">Wayback Machine</a>
+        </dd>
       </div>
     {/if}
     {#if result.published}
@@ -35,6 +47,14 @@
   {:else if shown.length}
     <ol>
       {#each shown as span (span.hash)}
+        <li>...{span.text}</li>
+      {/each}
+    </ol>
+  {/if}
+  {#if second.length}
+    <p class="fine">Then these, for the sets those three missed:</p>
+    <ol start={shown.length + 1}>
+      {#each second as span (span.hash)}
         <li>...{span.text}</li>
       {/each}
     </ol>

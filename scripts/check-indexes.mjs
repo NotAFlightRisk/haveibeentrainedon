@@ -1,12 +1,16 @@
-// Lists infini-gram indexes we haven't seen before, and whether each one answers yet
+// Lists infini-gram indexes we haven't seen before, and broken ones that have started answering
 import { readFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 
+const V4 = 'https://api.infini-gram.io/';
 const APIS = {
-  'https://api.infini-gram.io/': 'https://infini-gram.readthedocs.io/en/latest/api.html',
+  [V4]: 'https://infini-gram.readthedocs.io/en/latest/api.html',
   'https://api.infini-gram-mini.io/': 'https://infini-gram-mini.readthedocs.io/en/latest/api.html'
 };
-const known = new Set(JSON.parse(await readFile(new URL('indexes.json', import.meta.url), 'utf8')));
+const { seen, broken } = JSON.parse(
+  await readFile(new URL('indexes.json', import.meta.url), 'utf8')
+);
+const known = new Set([...seen, ...broken]);
 
 async function probe(api, index) {
   try {
@@ -23,6 +27,14 @@ async function probe(api, index) {
   }
 }
 
+// the docs never listed OLMo 3's, so they're tried by name until they work
+const mended = [];
+for (const index of broken) {
+  const answer = await probe(V4, index);
+  if (answer === 'answers') mended.push(`- \`${index}\` answers now, after failing for months`);
+  await sleep(2_000);
+}
+
 const found = [];
 for (const [api, docs] of Object.entries(APIS)) {
   const html = await (await fetch(docs, { signal: AbortSignal.timeout(30_000) })).text();
@@ -35,10 +47,10 @@ for (const [api, docs] of Object.entries(APIS)) {
   }
 }
 
-if (found.length) {
-  console.log(`The infini-gram docs list ${found.length === 1 ? 'an index' : 'indexes'} we haven't seen:
+if (found.length || mended.length) {
+  console.log(`Some infini-gram indexes are worth a look:
 
-${found.join('\n')}
+${[...found, ...mended].join('\n')}
 
-A new training set or crawl goes in \`src/lib/corpora.ts\` with its model line, once it answers. Either way, add the name to \`scripts/indexes.json\` so it isn't raised again.`);
+A new training set or crawl goes in \`src/lib/corpora.ts\` with its model line, once it answers, and on \`/about\`. Either way, file the name under \`seen\` in \`scripts/indexes.json\` (out of \`broken\`, if it was there) so it isn't raised again.`);
 }

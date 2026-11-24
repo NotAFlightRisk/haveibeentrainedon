@@ -55,8 +55,8 @@
     </p>
     <p>
       When a set misses, you can try three more of the page's sentences on it, judged by the same
-      two-out-of-three rule. Or check the Wayback Machine's copy of the page from around when that
-      set was made, in case you've edited it since.
+      two-out-of-three rule. Or check the Wayback Machine's oldest copy of the page, in case you've
+      edited it since.
     </p>
   </section>
 

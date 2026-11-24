@@ -66,8 +66,9 @@
       Put in just a domain and it reads the site's sitemaps (the ones its <code>robots.txt</code>
       names, then <code>/sitemap.xml</code>), or its feed if there's no sitemap, and picks 4 posts
       spread across what's listed. Each gets a quick look in Dolma and DCLM, the two sets that kept
-      the most small blogs. It's a sample of posts we could find, not a verdict on the site, and you
-      can swap a post that isn't really writing twice.
+      the most small blogs. It's a sample of posts we could find, not a verdict on the site. If it
+      picks something that isn't really writing, like a contact page, you can swap it, twice a
+      sample.
     </p>
   </section>
 

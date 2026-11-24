@@ -8,8 +8,7 @@
   import Caveats from '#lib/components/Caveats.svelte';
   import CrawlCard from '#lib/components/CrawlCard.svelte';
   import IndexCard from '#lib/components/IndexCard.svelte';
-  import { SETS } from '#lib/corpora.ts';
-  import { minutes, month, plural } from '#lib/format.ts';
+  import { minutes, plural } from '#lib/format.ts';
   import { headlineFor } from '#lib/share.ts';
   import { snapshot, unwrap } from '#lib/wayback.ts';
 
@@ -61,18 +60,12 @@
       : undefined
   );
   const deeper = $derived(result.done && missed && result.more ? again('deeper') : undefined);
-  // the copy the newest set that missed could have seen, in case the page has changed since
-  const archived = $derived.by(() => {
-    if (!result.done || !missed || !result.url || unwrap(result.url)) return;
-    const cutoff = result.sets
-      .filter((cell) => cell.verdict === 'none')
-      .map((cell) => SETS.find((set) => set.id === cell.id)?.newest ?? '')
-      .toSorted()
-      .at(-1);
-    if (!cutoff) return;
-    const url = `/?url=${encodeURIComponent(snapshot(result.url, cutoff))}`;
-    return { url, when: month(cutoff) };
-  });
+  // the oldest copy is the page as it first went up, before any edits since
+  const archived = $derived(
+    result.done && missed && result.url && !unwrap(result.url)
+      ? `/?url=${encodeURIComponent(snapshot(result.url, '1996-01-01'))}`
+      : undefined
+  );
 
   const asking = $derived(result.captures.some((capture) => capture.state === 'waiting'));
 
@@ -145,9 +138,7 @@
             <a href={deeper}>Try three more of the page's sentences</a> on the sets that missed.
           {/if}
           {#if archived}
-            Or check <a href={archived.url}>
-              the Wayback Machine's copy from around {archived.when}
-            </a>.
+            Or check <a href={archived}>the Wayback Machine's oldest copy</a> of the page.
           {/if}
         </p>
       {/if}

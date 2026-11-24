@@ -17,6 +17,9 @@ export const STAMPS: Record<CellVerdict, string> = {
   failed: "Couldn't check"
 };
 
+/** A stamp's words where the sentences aren't beside it, in a table or a picture */
+export const SHORT: Record<CellVerdict, string> = { ...STAMPS, none: 'No match' };
+
 /** The letter each settled verdict gets in a share image's name, one per set in SETS order */
 export const LETTERS: Partial<Record<CellVerdict, string>> = { match: 'm', none: 'n', new: 't' };
 

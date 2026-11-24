@@ -20,6 +20,7 @@
 <style>
   .caveats {
     display: grid;
+    align-content: start;
     gap: var(--space-3);
     padding: var(--space-4) var(--space-5);
     border: 1px solid var(--rule-strong);

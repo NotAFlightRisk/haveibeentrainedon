@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CellVerdict } from '#lib/server/result.ts';
-  import { STAMPS } from '#lib/share.ts';
+  import { SHORT, STAMPS } from '#lib/share.ts';
 
   interface Props {
     verdict: CellVerdict;
@@ -11,10 +11,7 @@
 
   let { verdict, delay = 0, short = false }: Props = $props();
 
-  const words: Record<CellVerdict, string> = $derived({
-    ...STAMPS,
-    none: short ? 'No match' : STAMPS.none
-  });
+  const words = $derived(short ? SHORT : STAMPS);
 </script>
 
 {#key verdict}
@@ -81,6 +78,16 @@
 
       &.match {
         font-size: 1rem;
+      }
+
+      @media (width < 40rem) {
+        padding-inline: var(--space-1);
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+
+        &.match {
+          font-size: 0.85rem;
+        }
       }
     }
   }

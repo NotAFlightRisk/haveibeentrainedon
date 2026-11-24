@@ -7,14 +7,6 @@ const longDate = new Intl.DateTimeFormat('en-GB', {
 
 export const day = (when: string | number) => longDate.format(new Date(when));
 
-const monthYear = new Intl.DateTimeFormat('en-GB', {
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC'
-});
-
-export const month = (when: string | number) => monthYear.format(new Date(when));
-
 export const number = (value: number) => value.toLocaleString('en-GB');
 
 export const plural = (count: number, one: string, many = `${one}s`) =>

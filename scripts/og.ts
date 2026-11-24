@@ -5,7 +5,7 @@ import { initWasm, Resvg } from '@resvg/resvg-wasm';
 import satori from 'satori';
 import { QUICK, SETS, type Corpus } from '#lib/corpora.ts';
 import type { CellVerdict } from '#lib/server/result.ts';
-import { headlineFor, LETTERS, OG_DOMAIN, ogImage, SITE, STAMPS } from '#lib/share.ts';
+import { headlineFor, LETTERS, OG_DOMAIN, ogImage, SHORT, SITE } from '#lib/share.ts';
 
 type Child = Node | string | false | undefined;
 interface Node {
@@ -119,7 +119,7 @@ const hole = div(
     width: 16,
     height: 16,
     borderRadius: 8,
-    background: token('shell'),
+    background: token('ground'),
     boxShadow: token('shadow-hole')
   })
 );
@@ -166,14 +166,11 @@ const looks: Partial<Record<CellVerdict, object>> = {
   new: { color: token('stamp-date'), fontSize: 23 },
   none: {
     color: token('stamp-none'),
-    border: '2px solid',
+    border: '1px solid',
     fontWeight: 700,
-    fontSize: 20,
+    fontSize: 18,
     letterSpacing: '0.03em',
     textTransform: 'none',
-    textAlign: 'center',
-    textWrap: 'balance',
-    whiteSpace: 'normal',
     transform: 'rotate(-2deg)'
   }
 };
@@ -192,7 +189,7 @@ const stamp = (verdict: CellVerdict) =>
       transform: 'rotate(-5deg)',
       ...looks[verdict]
     },
-    STAMPS[verdict]
+    SHORT[verdict]
   );
 
 function domainImage() {

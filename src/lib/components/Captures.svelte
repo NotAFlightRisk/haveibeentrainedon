@@ -26,6 +26,14 @@
   const stale = $derived(
     !asking && Date.now() - Math.max(...captures.map((capture) => capture.asked)) > MONTH
   );
+  const failed = $derived(!asking && captures.some(({ state }) => state === 'failed'));
+  const label = $derived(
+    !captures.length
+      ? 'Ask about the crawls since'
+      : failed
+        ? 'Ask again about the ones it missed'
+        : 'Ask about any newer crawls'
+  );
   let sending = $state(false);
 </script>
 
@@ -62,7 +70,7 @@
       {/each}
     </ol>
   {/if}
-  {#if !captures.length || stale}
+  {#if !captures.length || stale || failed}
     <form
       method="POST"
       action="?/crawls"
@@ -82,11 +90,7 @@
         </p>
       {/if}
       <button disabled={sending}>
-        {sending
-          ? 'Asking...'
-          : captures.length
-            ? 'Ask about any newer crawls'
-            : 'Ask about the crawls since'}
+        {sending ? 'Asking...' : label}
       </button>
       {#if error}
         <p class="error" role="alert">{error}</p>

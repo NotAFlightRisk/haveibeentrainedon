@@ -16,6 +16,8 @@ const TRIES = 3;
 const MOST_WAITING = 100;
 const HOUR = 60 * 60_000;
 const GIVE_UP_MS = HOUR / 2;
+// how long a crawl the index wouldn't answer rests before anyone can ask about it again
+const COOL_OFF_MS = 10 * 60_000;
 const MOST_RECORD = 2 * 1024 * 1024;
 
 export interface Crawl {
@@ -155,7 +157,7 @@ export async function loadCaptures(url: string) {
   return results;
 }
 
-/** Queues a page's crawls, and any that failed an hour or more ago, unless the line's too long */
+/** Queues a page's new crawls, and failed ones that have cooled off, unless the line's full */
 export async function askCaptures(url: string, lookup: string) {
   const now = Date.now();
   const count = (sql: string, ...values: unknown[]) =>
@@ -170,10 +172,11 @@ export async function askCaptures(url: string, lookup: string) {
       `select count(*) as count from captures
        where url = ? and (state != 'failed' or asked_at > ?)`,
       url,
-      now - HOUR
+      now - COOL_OFF_MS
     )
   ]);
-  if (waiting + list.length - settled > MOST_WAITING) return false;
+  if (waiting + list.length - settled > MOST_WAITING) return 'busy';
+  if (list.length === settled) return 'resting';
   await env.DB.batch(
     list.map(({ id, name }) =>
       env.DB.prepare(
@@ -182,11 +185,11 @@ export async function askCaptures(url: string, lookup: string) {
          on conflict do update set state = 'waiting', tries = 0, lookup = excluded.lookup,
            asked_at = excluded.asked_at
          where captures.state = 'failed' and captures.asked_at < ?`
-      ).bind(url, id, name, lookup, now, now - HOUR)
+      ).bind(url, id, name, lookup, now, now - COOL_OFF_MS)
     )
   );
   await env.CRAWLS.getByName('index').wake();
-  return true;
+  return 'asked';
 }
 
 /** What a crawl's copy holds, or nothing when the copy won't load, as it was still fetched */

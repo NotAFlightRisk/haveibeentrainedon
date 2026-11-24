@@ -240,8 +240,10 @@ export class Crawls extends DurableObject {
       else await settle('found', { day: record.day, ...(await reading(record, next.lookup)) });
       await this.ctx.storage.setAlarm(Date.now() + GAP_MS);
     } catch (error) {
-      await report(error, undefined, 'crawls');
-      await settle(next.tries + 1 < TRIES ? 'waiting' : 'failed', {}, next.tries + 1);
+      const tries = next.tries + 1;
+      // the index often fails once and answers the next time, so only a crawl it gave up on is news
+      if (tries >= TRIES) await report(error, undefined, 'crawls');
+      await settle(tries < TRIES ? 'waiting' : 'failed', {}, tries);
       await this.ctx.storage.setAlarm(Date.now() + BACK_OFF_MS);
     }
   }
